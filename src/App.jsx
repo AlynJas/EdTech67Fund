@@ -4,7 +4,7 @@ import {
   CheckCircle2, Clock, ShieldAlert, Edit, Search, Calendar, 
   X, Bell, MessageSquare, Check, History, Target, PieChart, 
   ArrowUpCircle, ArrowDownCircle, FileText, Image as ImageIcon, 
-  BookOpen, QrCode, Loader2, Upload, AlertCircle
+  BookOpen, QrCode, Loader2, Upload, AlertCircle, KeyRound
 } from 'lucide-react';
 
 import { supabase } from './supabaseClient';
@@ -1041,7 +1041,7 @@ export default function App() {
             </div>
           </div>
         )}
-        
+
         {/* --- MODALS --- */}
         
         {/* Payment Modal (QR Code & Processing) */}
