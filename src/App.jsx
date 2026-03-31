@@ -247,7 +247,14 @@ export default function App() {
       alert(`ตรวจไม่ผ่าน! \nเหตุผล: ${result.message}`);
       setPaymentStep('qr');
     }
-  } catch (error) { ... }
+  } catch (error) {
+      console.error("Error verifying slip:", error);
+      alert('เกิดข้อผิดพลาดในการเชื่อมต่อกับระบบตรวจสลิป กรุณาลองใหม่');
+      setPaymentStep('qr');
+    } finally {
+      setIsVerifying(false);
+    }
+  };
 };
 
     // ส่งข้อมูลบันทึกลง Supabase
@@ -272,7 +279,7 @@ export default function App() {
       closeRecordModal();
       setTimeout(() => setSuccessMsg(''), 4000);
     }, 1500); 
-  };
+
 
   const handleUploadSlip = (e, txId) => {
     const file = e.target.files[0];
@@ -1059,4 +1066,3 @@ export default function App() {
       </main>
     </div>
   );
-}
