@@ -7,22 +7,8 @@ import {
   BookOpen, QrCode, Loader2, Upload 
 } from 'lucide-react';
 
-// จำลอง (Mock) ฟังก์ชันของ supabase เพื่อให้สามารถแสดงผลพรีวิวบนหน้านี้ได้
-// หมายเหตุ: สำหรับการนำไปรันใน VS Code ของคุณจริงๆ ให้ลบโค้ด mock ตัวแปร supabase นี้ออก 
-// และเปิดใช้งาน `import { supabase } from './supabaseClient';` ตามเดิมครับ
-const supabase = {
-  from: () => ({
-    select: () => ({
-      order: () => Promise.resolve({ data: null, error: null })
-    }),
-    insert: (items) => ({
-      select: () => Promise.resolve({ data: items, error: null })
-    }),
-    update: () => ({
-      eq: () => Promise.resolve({ error: null })
-    })
-  })
-};
+import { supabase } from './supabaseClient';
+// --- ข้อมูลจำลอง (Mock Data) ---
 
 const users = {
   'admin_room': { password: 'password', role: 'admin_room', name: 'ผู้ดูแลเงินห้อง' },
@@ -231,36 +217,37 @@ export default function App() {
   };
 
   const handleVerifySlip = async (e) => {
-    const file = e.target.files[0]; 
-    if (!file) return;
+  const file = e.target.files[0]; // 1. ดึงไฟล์รูปภาพสลิปที่ผู้ใช้อัปโหลดมา
+  if (!file) return;
 
-    setIsVerifying(true); 
-    if (qrTimerRef.current) clearInterval(qrTimerRef.current);
+  setIsVerifying(true); // เปิดไอคอนหมุนๆ ให้รู้ว่ากำลังตรวจ
 
-    try {
-      const formData = new FormData();
-      formData.append('files', file);
+  try {
+    const formData = new FormData();
+    formData.append('files', file);
 
-      // ดึงกุญแจ API จากไฟล์ .env
-      const branchId = import.meta.env.VITE_SLIPOK_BRANCH_ID;
-      const apiKey = import.meta.env.VITE_SLIPOK_API_KEY;
+    // ดึงกุญแจ API จากไฟล์ .env
+    const branchId = import.meta.env.VITE_SLIPOK_BRANCH_ID;
+    const apiKey = import.meta.env.VITE_SLIPOK_API_KEY;
 
-      // 2. ส่งรูปสลิปไปให้ SlipOK ตรวจสอบ (ผ่านตัวกลาง CORS Proxy)
-      const targetUrl = `https://api.slipok.com/api/line/apikey/${branchId}`;
-      const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+    // 1. สร้าง URL เป้าหมาย (SlipOK)
+    const targetUrl = `https://api.slipok.com/api/line/apikey/${branchId}`;
+    // 2. เอา URL เป้าหมายไปต่อท้าย URL ของท่อลอด (CORS Proxy)
+    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
 
-      const response = await fetch(proxyUrl, {
-        method: 'POST',
-        headers: { 'x-authorization': apiKey },
-        body: formData
-      });
-      const result = await response.json();
+    // 3. ส่งข้อมูลไปที่ท่อลอดแทน
+    const response = await fetch(proxyUrl, {
+    method: 'POST',
+    headers: { 'x-authorization': apiKey },
+    body: formData
+    });
+    const result = await response.json();
 
-      // 3. เช็คผลลัพธ์: ถ้าตรวจผ่าน (success) และ ยอดเงินตรง (amount === parsedAmount)
-      if (result.success === true && result.data.amount === parsedAmount) {
-        setPaymentStep('success'); 
-        
-        // --- ดำเนินการบันทึกข้อมูลลงฐานข้อมูล ---
+    // 3. เช็คผลลัพธ์: ถ้าตรวจผ่าน (success) และ ยอดเงินตรง (amount === parsedAmount)
+    if (result.success === true && result.data.amount === parsedAmount) {
+      setPaymentStep('success'); // ค่อยให้ผ่าน
+      // ... (โค้ดบันทึกข้อมูลลงฐานข้อมูล) ...
+    // --- ดำเนินการบันทึกข้อมูลลงฐานข้อมูล ---
         const newTimestamp = new Date().toISOString();
         const historyData = [{ action: 'create', amount: parsedAmount, recordedBy: currentUser.name, timestamp: newTimestamp }];
         const newDbTx = {
@@ -276,29 +263,29 @@ export default function App() {
           slip_url: result.data ? result.data.url : null
         };
 
-        const { data, error } = await supabase.from('transactions').insert([newDbTx]).select();
+    // ส่งข้อมูลบันทึกลง Supabase
+    const { data, error } = await supabase.from('transactions').insert([newDbTx]).select();
 
-        if (data && data.length > 0) {
-          // เอาข้อมูลที่เพิ่งเซฟเสร็จมาอัปเดตหน้าจอทันที
-          const formattedTx = {
-            ...data[0],
-            studentId: data[0].student_id,
-            studentName: data[0].student_name,
-            fundType: data[0].fund_type,
-            recordedBy: data[0].recorded_by,
-            slipUrl: data[0].slip_url
-          };
-          setTransactions(prev => [formattedTx, ...prev]);
-        }
+    if (data && data.length > 0) {
+      // เอาข้อมูลที่เพิ่งเซฟเสร็จมาอัปเดตหน้าจอทันที
+      const formattedTx = {
+        ...data[0],
+        studentId: data[0].student_id,
+        studentName: data[0].student_name,
+        fundType: data[0].fund_type,
+        recordedBy: data[0].recorded_by,
+        slipUrl: data[0].slip_url
+      };
+      setTransactions(prev => [formattedTx, ...prev]);
+    }
 
-        setSuccessMsg(`บันทึกการชำระเงินให้ ${recordTarget.name} จำนวน ฿${parsedAmount} เรียบร้อยแล้ว!`);
+    setSuccessMsg(`บันทึกการชำระเงินให้ ${recordTarget.name} จำนวน ฿${parsedAmount} เรียบร้อยแล้ว!`);
 
-        paymentTimeoutRef.current = setTimeout(() => {
-          closeRecordModal();
-          setTimeout(() => setSuccessMsg(''), 4000);
-        }, 1500); 
-
-      } else {
+    paymentTimeoutRef.current = setTimeout(() => {
+      closeRecordModal();
+      setTimeout(() => setSuccessMsg(''), 4000);
+    }, 1500); 
+  } else {
         // ถ้าไม่ผ่าน ให้แจ้งเตือน
         alert(`ตรวจไม่ผ่าน! \nเหตุผล: ${result.message}`);
         setPaymentStep('qr');
@@ -853,24 +840,35 @@ export default function App() {
                         
                         {qrTimeLeft > 0 ? (
                           <div className="w-full space-y-2 mt-1">
+                            <div className={`flex items-center justify-center gap-2 ${currentTheme.text} mb-2`}>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              <span className="font-bold text-sm animate-pulse">รอรับยอดโอน... ({Math.floor(qrTimeLeft / 60)}:{(qrTimeLeft % 60).toString().padStart(2, '0')})</span>
+                            </div>
+                            {/* <button onClick={simulatePaymentReceived} className="w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl border border-gray-200 text-sm transition-colors">(จำลอง API) ได้รับเงินแล้ว</button> */}
+                            {/* เช็คก่อนว่ากำลังตรวจสลิปอยู่ไหม (isVerifying) */}
                             {isVerifying ? (
-                              <div className="flex flex-col items-center justify-center py-4 bg-gray-50 rounded-xl border border-gray-100">
-                                <Loader2 className={`w-8 h-8 animate-spin ${currentTheme.text} mb-2`} />
+                            // ถ้ากำลังตรวจ ให้โชว์ไอคอนหมุนๆ (Loader2)
+                            <div className="flex flex-col items-center justify-center py-4...">
+                                <Loader2 className={`w-8 h-8 animate-spin ...`} />
                                 <span className="font-bold text-sm text-gray-600">กำลังตรวจสอบสลิป...</span>
-                              </div>
+                            </div>
                             ) : (
-                              <>
-                                <div className={`flex items-center justify-center gap-2 ${currentTheme.text} mb-2`}>
-                                  <Clock className="w-4 h-4" />
-                                  <span className="font-bold text-sm">เมื่อโอนแล้ว กรุณาแนบสลิป ({Math.floor(qrTimeLeft / 60)}:{(qrTimeLeft % 60).toString().padStart(2, '0')})</span>
-                                </div>
-                                <label className={`w-full py-2.5 text-white font-bold rounded-xl text-sm transition-colors cursor-pointer flex justify-center items-center gap-2 shadow-sm ${currentTheme.btnPrimary}`}>
-                                  <Upload className="w-4 h-4" />
-                                  <span>อัปโหลดสลิปเพื่อยืนยัน</span>
-                                  <input type="file" accept="image/*" onChange={handleVerifySlip} className="hidden" />
+                            // ถ้าไม่ได้ตรวจ ให้โชว์ปุ่มอัปโหลดรูป
+                            <>
+                                <label className={`w-full py-2.5 text-white font-bold rounded-xl ... cursor-pointer`}>
+                                <Upload className="w-4 h-4" />
+                                <span>อัปโหลดสลิปเพื่อยืนยัน</span>
+
+                                <input type="file" accept="image/*" onChange={handleVerifySlip} className="hidden" />
                                 </label>
-                              </>
+                            </>
                             )}
+                            
+                            <label className={`w-full py-2.5 text-white font-bold rounded-xl text-sm transition-colors cursor-pointer flex justify-center items-center gap-2 shadow-sm ${currentTheme.btnPrimary}`}>
+                            <Upload className="w-4 h-4" />
+                            <span>อัปโหลดสลิปเพื่อยืนยัน</span>
+                            <input type="file" accept="image/*" onChange={handleVerifySlip} className="hidden" />
+                            </label>
                           </div>
                         ) : (
                           <div className="w-full space-y-2 mt-2">
