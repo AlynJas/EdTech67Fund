@@ -4,7 +4,7 @@ import {
   CheckCircle2, Clock, ShieldAlert, Edit, Search, Calendar, 
   X, Bell, MessageSquare, Check, History, Target, PieChart, 
   ArrowUpCircle, ArrowDownCircle, FileText, Image as ImageIcon, 
-  BookOpen, QrCode, Loader2, Upload 
+  BookOpen, QrCode, Loader2, Upload, AlertCircle
 } from 'lucide-react';
 
 import { supabase } from './supabaseClient';
