@@ -150,14 +150,13 @@ export default function App() {
     window.addEventListener('keydown', handleActivity);
     
     // --- เพิ่มใหม่: ลอจิกสำหรับคำนวณตาราง Excel 18 สัปดาห์ ---
-  const weeklyRate = rules.rate || 10; // เรทการจ่ายต่อสัปดาห์ (ดึงจากกฎ)
-  const totalWeeksToDisplay = 18; // จำนวนสัปดาห์ที่ต้องการแสดง
+  const weeklyRate = rules?.rate || 10; 
+  const totalWeeksToDisplay = 18;
 
   const studentsWithSummary = filteredStudents.map(student => {
-    // 1. คำนวณยอดที่จ่ายแล้วทั้งหมดของนักศึกษาคนนี้ (ไม่รวมรายการที่รอสลิป)
     const totalPaid = currentFundTransactions
-      .filter(tx => tx.studentId === student.id && tx.type === 'student_payment' && tx.status !== 'pending')
-      .reduce((sum, tx) => sum + tx.amount, 0);
+      .filter(tx => tx?.studentId === student?.id && tx?.type === 'student_payment' && tx?.status !== 'pending')
+      .reduce((sum, tx) => sum + (tx?.amount || 0), 0);
     
     const targetAmount = activeTab === 'room' ? STUDENT_TARGET_ROOM : STUDENT_TARGET_TRIP;
     const remainingAmount = Math.max(0, targetAmount - totalPaid);
@@ -615,15 +614,16 @@ export default function App() {
   const formatDate = (isoString) => new Date(isoString).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
 
   // --- Data Filtering & Calculations ---
-  const termTransactions = transactions.filter(t => t.term === selectedTerm);
-  const calculateNetTotal = (txs) => txs
-    .filter(tx => tx.status !== 'pending')
-    .reduce((sum, tx) => tx.type === 'expense' ? sum - tx.amount : sum + tx.amount, 0);
+  const termTransactions = (transactions || []).filter(t => t?.term === selectedTerm);
+  
+  const calculateNetTotal = (txs) => (txs || [])
+    .filter(tx => tx?.status !== 'pending')
+    .reduce((sum, tx) => tx?.type === 'expense' ? sum - (tx?.amount || 0) : sum + (tx?.amount || 0), 0);
 
-  const currentFundTransactions = termTransactions.filter(t => t.fundType === activeTab);
+  const currentFundTransactions = termTransactions.filter(t => t?.fundType === activeTab);
   const totalActiveFund = calculateNetTotal(currentFundTransactions);
 
-  const filteredStudents = students.filter(s => s.name.includes(studentSearchQuery) || s.id.includes(studentSearchQuery));
+  const filteredStudents = (students || []).filter(s => (s?.name || '').includes(studentSearchQuery) || (s?.id || '').includes(studentSearchQuery));
   const studentsWithSummary = filteredStudents.map(student => {
     const totalPaid = currentFundTransactions
       .filter(tx => tx.studentId === student.id && tx.type === 'student_payment' && tx.status !== 'pending')
@@ -895,15 +895,15 @@ export default function App() {
                         </tr>
                       </thead>
                       <tbody>
-                        {studentsWithSummary.map((s, idx) => (
-                          <tr key={s.id} className="hover:bg-gray-50 transition-colors">
+                        {studentsWithSummary?.map((s, idx) => (
+                          <tr key={s?.id || idx} className="hover:bg-gray-50 transition-colors">
                             {/* ข้อมูล 3 คอลัมน์แรก */}
                             <td className="px-4 py-2 text-center text-gray-800 border border-gray-300 bg-white">{idx + 1}</td>
-                            <td className="px-4 py-2 font-mono text-gray-800 border border-gray-300 bg-white">{s.id}</td>
-                            <td className="px-4 py-2 font-medium text-gray-800 border border-gray-300 sticky left-0 bg-white z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">{s.name}</td>
+                            <td className="px-4 py-2 font-mono text-gray-800 border border-gray-300 bg-white">{s?.id}</td>
+                            <td className="px-4 py-2 font-medium text-gray-800 border border-gray-300 sticky left-0 bg-white z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">{s?.name}</td>
                             
                             {/* ข้อมูลยอดเงินรายสัปดาห์ */}
-                            {s.weeks.map((amount, i) => (
+                            {s?.weeks?.map((amount, i) => (
                               <td key={i} className="px-2 py-2 text-center border border-gray-300 text-gray-800 bg-white">
                                 {amount}
                               </td>
@@ -950,21 +950,21 @@ export default function App() {
                         </tr>
                       </thead>
                       <tbody className="bg-white">
-                        {filteredOtherTransactions.length > 0 ? filteredOtherTransactions.map((tx, idx) => (
-                          <tr key={tx.id} className="hover:bg-gray-50 transition-colors">
+                        {filteredOtherTransactions?.length > 0 ? filteredOtherTransactions?.map((tx, idx) => (
+                          <tr key={tx?.id || idx} className="hover:bg-gray-50 transition-colors">
                             <td className="px-4 py-2 text-center text-gray-800 border border-gray-300">
-                              {new Date(tx.timestamp).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                              {new Date(tx?.timestamp).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                             </td>
-                            <td className="px-4 py-2 font-medium text-gray-800 border border-gray-300">{tx.description}</td>
+                            <td className="px-4 py-2 font-medium text-gray-800 border border-gray-300">{tx?.description}</td>
                             <td className="px-4 py-2 text-center border border-gray-300">
                               {/* ทำให้ตัวเลขชิดขวานิดๆ แต่ยังอยู่ตรงกลาง เหมือนในรูป */}
-                              <span className={`block font-medium ${tx.type === 'income' ? 'text-gray-800' : 'text-gray-800'}`}>
-                                {tx.type === 'expense' ? '-' : ''}{tx.amount}
+                              <span className={`block font-medium ${tx?.type === 'income' ? 'text-gray-800' : 'text-gray-800'}`}>
+                                {tx?.type === 'expense' ? '-' : ''}{tx?.amount}
                               </span>
                             </td>
-                            <td className="px-4 py-2 text-gray-600 border border-gray-300 text-xs text-center">{tx.recordedBy}</td>
+                            <td className="px-4 py-2 text-gray-600 border border-gray-300 text-xs text-center">{tx?.recordedBy}</td>
                             <td className="px-4 py-2 text-center border border-gray-300">
-                              {tx.slipUrl ? (
+                              {tx?.slipUrl ? (
                                 <button onClick={() => { setCurrentSlip(tx.slipUrl); setSlipModalOpen(true); }} className="text-blue-500 hover:text-blue-700 mx-auto block" title="ดูหลักฐาน"><ImageIcon className="w-5 h-5" /></button>
                               ) : (
                                 <span className="text-gray-300">-</span>
@@ -999,7 +999,7 @@ export default function App() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
-                      {studentsWithSummary.map((s, idx) => (
+                        {studentsWithSummary?.map((s, idx) => (
                         <tr key={s.id} className="hover:bg-gray-50 transition-colors">
                           <td className="px-4 py-4 text-center text-sm text-gray-400">{idx+1}</td><td className="px-4 py-4 text-sm text-gray-500 font-mono">{s.id}</td><td className="px-4 py-4 font-medium text-sm md:text-base">{s.name}</td>
                           <td className="px-4 py-4 text-right"><span className={`font-bold ${s.totalPaid>0?'text-green-600':'text-gray-300'}`}>฿{s.totalPaid.toLocaleString()}</span></td>
@@ -1039,7 +1039,7 @@ export default function App() {
                       </tr>
                      </thead>
                      <tbody className="divide-y divide-gray-50">
-                        {filteredHistory.map(tx => {
+                        {filteredHistory?.map(tx => {
                           const canEdit = currentUser?.role === `admin_${tx.fundType}`;
                           const txHistory = tx.history || [];
                           const editCount = txHistory.filter(h => h.action === 'edit').length;
