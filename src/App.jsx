@@ -75,6 +75,7 @@ export default function App() {
   const [notifyTx, setNotifyTx] = useState(null);
   const [notifyReason, setNotifyReason] = useState('');
   const [isVerifying, setIsVerifying] = useState(false); // เพิ่มสถานะกำลังโหลดตรวจสลิป
+  const [verifyingHistoryId, setVerifyingHistoryId] = useState(null); // <-- เพิ่มตัวแปรนี้ สำหรับตรวจสลิปย้อนหลัง
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [historyTx, setHistoryTx] = useState(null);
 
