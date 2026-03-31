@@ -641,6 +641,15 @@ export default function App() {
     return matchName && matchDate;
   });
 
+  // กรองรายการอื่นๆ (รายรับ-รายจ่ายอื่น ที่ไม่ใช่นักศึกษาจ่าย)
+  const otherTransactionsList = currentFundTransactions.filter(tx => tx?.type !== 'student_payment' && tx?.status !== 'pending');
+  // ค้นหาในตารางรายการอื่นๆ
+  const filteredOtherTransactions = otherTransactionsList.filter(tx => {
+    const matchName = (tx?.description || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const matchDate = searchDate ? (tx?.timestamp || '').startsWith(searchDate) : true;
+    return matchName && matchDate;
+  });
+
   const adminNotifications = notifications.filter(n => n.status === 'pending' && n.term === selectedTerm && currentUser && ((currentUser.role === 'admin_room' && n.fundType === 'room') || (currentUser.role === 'admin_trip' && n.fundType === 'trip')));
 
   const roomTransactions = termTransactions.filter(t => t.fundType === 'room');
