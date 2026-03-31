@@ -7,23 +7,7 @@ import {
   BookOpen, QrCode, Loader2, Upload 
 } from 'lucide-react';
 
-// จำลอง (Mock) ฟังก์ชันของ supabase เพื่อให้สามารถแสดงผลพรีวิวบนหน้านี้ได้
-// หมายเหตุ: สำหรับการนำไปรันใน VS Code ของคุณจริงๆ ให้ลบโค้ด mock ตัวแปร supabase นี้ออก 
-// และเปิดใช้งาน `import { supabase } from './supabaseClient';` ตามเดิมครับ
-const supabase = {
-  from: () => ({
-    select: () => ({
-      order: () => Promise.resolve({ data: null, error: null })
-    }),
-    insert: (items) => ({
-      select: () => Promise.resolve({ data: items, error: null })
-    }),
-    update: () => ({
-      eq: () => Promise.resolve({ error: null })
-    })
-  })
-};
-
+import { supabase } from './supabaseClient';
 // --- ข้อมูลจำลอง (Mock Data) ---
 const mockStudents = [
   { id: '65001', name: 'นายสมชาย ใจดี' },
