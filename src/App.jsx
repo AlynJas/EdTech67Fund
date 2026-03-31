@@ -54,7 +54,8 @@ export default function App() {
   const [recordTarget, setRecordTarget] = useState(null);
   const [amount, setAmount] = useState('');
   const [paymentStep, setPaymentStep] = useState('input');
-  const [qrTimeLeft, setQrTimeLeft] = useState(180);
+  const [qrTimeLeft, setQrTimeLeft] = useState(660);
+  const [pendingTxId, setPendingTxId] = useState(null); // เก็บ ID รายการที่กำลังรอสลิป
   
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingTx, setEditingTx] = useState(null);
@@ -201,12 +202,36 @@ export default function App() {
   const isAmountValid = rules.allowed && parsedAmount >= rules.minAmount && parsedAmount <= rules.maxAmount && (parsedAmount % rules.rate === 0);
   const calculatedUnits = rules.allowed && isAmountValid ? Number((parsedAmount / rules.rate).toFixed(2)) : 0;
 
-  const handleGenerateQR = (e) => {
+  const handleGenerateQR = async (e) => {
     e.preventDefault();
     if (!currentUser || !recordTarget || !isAmountValid) return;
 
     setPaymentStep('qr');
-    setQrTimeLeft(180);
+    setQrTimeLeft(660); // ตั้งเวลา 11 นาที
+
+    // สร้างรายการ "รอดำเนินการ (pending)" ลงในฐานข้อมูลทันทีที่สร้าง QR
+    const newTimestamp = new Date().toISOString();
+    const newDbTx = {
+      type: 'student_payment', 
+      student_id: recordTarget.id, 
+      student_name: recordTarget.name,
+      fund_type: activeTab, 
+      term: selectedTerm, 
+      amount: parsedAmount, 
+      recorded_by: currentUser.name,
+      timestamp: newTimestamp, 
+      history: [{ action: 'create', amount: parsedAmount, recordedBy: currentUser.name, timestamp: newTimestamp }],
+      status: 'pending' // สำคัญ: กำหนดสถานะเป็นรอดำเนินการ
+    };
+
+    const { data } = await supabase.from('transactions').insert([newDbTx]).select();
+    if (data && data.length > 0) {
+      const formattedTx = {
+        ...data[0], studentId: data[0].student_id, studentName: data[0].student_name, fundType: data[0].fund_type, recordedBy: data[0].recorded_by, slipUrl: data[0].slip_url, status: 'pending'
+      };
+      setTransactions(prev => [formattedTx, ...prev]);
+      setPendingTxId(formattedTx.id); // เก็บ ID ไว้ใช้อัปเดตตอนตรวจสลิปผ่าน
+    }
 
     qrTimerRef.current = setInterval(() => {
       setQrTimeLeft((prev) => {
@@ -240,26 +265,14 @@ export default function App() {
 
     // 3. เช็คผลลัพธ์: ถ้าตรวจผ่าน (success) และ ยอดเงินตรง (amount === parsedAmount)
     if (result.success === true && result.data.amount === parsedAmount) {
-      setPaymentStep('success'); // ค่อยให้ผ่าน
-      // ... (โค้ดบันทึกข้อมูลลงฐานข้อมูล) ...
-    // --- ดำเนินการบันทึกข้อมูลลงฐานข้อมูล ---
-        const newTimestamp = new Date().toISOString();
-        const historyData = [{ action: 'create', amount: parsedAmount, recordedBy: currentUser.name, timestamp: newTimestamp }];
-        const newDbTx = {
-          type: 'student_payment', 
-          student_id: recordTarget.id, 
-          student_name: recordTarget.name,
-          fund_type: activeTab, 
-          term: selectedTerm, 
-          amount: parsedAmount, 
-          recorded_by: currentUser.name,
-          timestamp: newTimestamp, 
-          history: historyData,
-          slip_url: result.data ? result.data.url : null
-        };
+        setPaymentStep('success'); 
+        
+        // สลิปถูกต้อง! ทำการอัปเดตสถานะรายการที่สร้างไว้เป็น completed
+        const slipUrl = result.data ? result.data.url : null;
+        await supabase.from('transactions').update({ status: 'completed', slip_url: slipUrl }).eq('id', pendingTxId);
 
-    // ส่งข้อมูลบันทึกลง Supabase
-    const { data, error } = await supabase.from('transactions').insert([newDbTx]).select();
+        // อัปเดตข้อมูลบนหน้าจอให้กลายเป็นสำเร็จ
+        setTransactions(prev => prev.map(t => t.id === pendingTxId ? { ...t, status: 'completed', slipUrl: slipUrl } : t));
 
     if (data && data.length > 0) {
       // เอาข้อมูลที่เพิ่งเซฟเสร็จมาอัปเดตหน้าจอทันที
@@ -294,6 +307,45 @@ export default function App() {
     }
   };
 
+  // --- ฟังก์ชันอัปโหลดสลิปย้อนหลัง จากตารางประวัติ ---
+  const handleVerifySlipFromHistory = async (e, tx) => {
+    const file = e.target.files[0]; 
+    if (!file) return;
+
+    setVerifyingHistoryId(tx.id); // แสดงไอคอนโหลดเฉพาะแถวนั้น
+
+    try {
+      const formData = new FormData();
+      formData.append('files', file);
+      const branchId = import.meta.env.VITE_SLIPOK_BRANCH_ID;
+      const apiKey = import.meta.env.VITE_SLIPOK_API_KEY;
+
+      const response = await fetch(`/slipok-api/${branchId}`, {
+        method: 'POST',
+        headers: { 'x-authorization': apiKey },
+        body: formData
+      });
+      const result = await response.json();
+
+      // เช็คว่าสลิปที่อัปย้อนหลัง ยอดเงินตรงกับที่ค้างไว้ (tx.amount) หรือไม่
+      if (result.success === true && result.data.amount === tx.amount) {
+        const slipUrl = result.data ? result.data.url : null;
+        await supabase.from('transactions').update({ status: 'completed', slip_url: slipUrl }).eq('id', tx.id);
+        
+        setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, status: 'completed', slipUrl: slipUrl } : t));
+        setSuccessMsg(`อัปเดตสลิปย้อนหลังสำเร็จ! ยอดเงินถูกบันทึกเข้าระบบแล้ว`);
+        setTimeout(() => setSuccessMsg(''), 4000);
+      } else {
+        alert(`สลิปไม่ถูกต้อง หรือ ยอดเงินไม่ตรงกับรายการนี้!\n(รายการนี้ต้องการสลิปยอด ฿${tx.amount})`);
+      }
+    } catch (error) {
+      console.error("Error:", error);
+      alert('ระบบตรวจสลิปมีปัญหา กรุณาลองใหม่');
+    } finally {
+      setVerifyingHistoryId(null);
+    }
+  };
+  
   const handleUploadSlip = (e, txId) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -388,14 +440,18 @@ export default function App() {
 
   // --- Data Filtering & Calculations ---
   const termTransactions = transactions.filter(t => t.term === selectedTerm);
-  const calculateNetTotal = (txs) => txs.reduce((sum, tx) => tx.type === 'expense' ? sum - tx.amount : sum + tx.amount, 0);
+  const calculateNetTotal = (txs) => txs
+    .filter(tx => tx.status !== 'pending')
+    .reduce((sum, tx) => tx.type === 'expense' ? sum - tx.amount : sum + tx.amount, 0);
 
   const currentFundTransactions = termTransactions.filter(t => t.fundType === activeTab);
   const totalActiveFund = calculateNetTotal(currentFundTransactions);
 
   const filteredStudents = students.filter(s => s.name.includes(studentSearchQuery) || s.id.includes(studentSearchQuery));
   const studentsWithSummary = filteredStudents.map(student => {
-    const totalPaid = currentFundTransactions.filter(tx => tx.studentId === student.id && tx.type === 'student_payment').reduce((sum, tx) => sum + tx.amount, 0);
+    const totalPaid = currentFundTransactions
+      .filter(tx => tx.studentId === student.id && tx.type === 'student_payment' && tx.status !== 'pending')
+      .reduce((sum, tx) => sum + tx.amount, 0);
     const targetAmount = activeTab === 'room' ? STUDENT_TARGET_ROOM : STUDENT_TARGET_TRIP;
     const remainingAmount = Math.max(0, targetAmount - totalPaid);
     return { ...student, totalPaid, targetAmount, remainingAmount };
@@ -692,12 +748,19 @@ export default function App() {
                                 {tx.type === 'student_payment' ? (
                                   <>
                                     <div className="font-medium text-gray-900 text-sm flex items-center gap-1.5 line-clamp-1">
-                                      {tx.studentName}
-                                      {tx.slipUrl ? (
-                                        <button onClick={() => { setCurrentSlip(tx.slipUrl); setSlipModalOpen(true); }} className="text-blue-500 hover:text-blue-700 shrink-0" title="ดูหลักฐานสลิป"><ImageIcon className="w-4 h-4" /></button>
-                                      ) : (
-                                        <label className="text-gray-400 hover:text-indigo-600 cursor-pointer shrink-0" title="แนบสลิป"><Upload className="w-3.5 h-3.5" /><input type="file" accept="image/*" onChange={(e) => handleUploadSlip(e, tx.id)} className="hidden" /></label>
-                                      )}
+                                        {tx.studentName}
+                                        
+                                        {/* --- เพิ่มเงื่อนไข ถ้ารอสลิปให้ขึ้นป้ายสีส้ม --- */}
+                                        {tx.status === 'pending' && (
+                                        <span className="text-[9px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-bold ml-1 whitespace-nowrap flex items-center gap-1">
+                                            <AlertCircle className="w-3 h-3"/> รอหลักฐาน
+                                        </span>
+                                        )}
+                                        
+                                        {/* --- ปุ่มดูสลิป โชว์เฉพาะตอนโอนสำเร็จแล้ว --- */}
+                                        {tx.status === 'completed' && tx.slipUrl ? (
+                                        <button onClick={() => { setCurrentSlip(tx.slipUrl); setSlipModalOpen(true); }} className="text-blue-500 hover:text-blue-700 shrink-0 ml-1" title="ดูหลักฐานสลิป"><ImageIcon className="w-4 h-4" /></button>
+                                        ) : null}
                                     </div>
                                     <div className="text-[10px] text-gray-500 font-mono mt-0.5">{tx.studentId}</div>
                                   </>
@@ -711,16 +774,31 @@ export default function App() {
                                   </>
                                 )}
                               </td>
-                              <td className="px-4 py-3 text-right"><span className={`font-bold text-sm ${tx.type === 'expense' ? 'text-red-600' : tx.type === 'income' ? 'text-emerald-600' : 'text-gray-900'}`}>{tx.type === 'expense' ? '-' : tx.type === 'income' ? '+' : ''}฿{tx.amount.toLocaleString()}</span></td>
-                              {currentUser && (
+                              <td className="px-4 py-3 text-right">
+                                {/* --- เพิ่มเงื่อนไข tx.status === 'pending' ให้เป็นสีเทาและขีดฆ่า (line-through) --- */}
+                                <span className={`font-bold text-sm ${tx.type === 'expense' ? 'text-red-600' : tx.type === 'income' ? 'text-emerald-600' : tx.status === 'pending' ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
+                                {tx.type === 'expense' ? '-' : tx.type === 'income' ? '+' : ''}฿{tx.amount.toLocaleString()}
+                                </span>
+                            </td>
+                            {currentUser && (
                                 <td className="px-4 py-3 text-center">
-                                  {canEdit ? (
+                                {/* --- เพิ่มเงื่อนไข ถ้ารอสลิป ให้โชว์ปุ่มอัปสลิปย้อนหลังสีส้ม --- */}
+                                {tx.status === 'pending' ? (
+                                    verifyingHistoryId === tx.id ? (
+                                    <Loader2 className="w-4 h-4 animate-spin text-gray-400 mx-auto" />
+                                    ) : (
+                                    <label className="cursor-pointer inline-flex items-center gap-1 px-2 py-1.5 bg-orange-50 hover:bg-orange-100 text-orange-600 rounded-lg text-[10px] font-bold transition-colors">
+                                        <Upload className="w-3 h-3" /> อัปสลิป
+                                        <input type="file" accept="image/*" className="hidden" onChange={(e) => handleVerifySlipFromHistory(e, tx)} />
+                                    </label>
+                                    )
+                                ) : canEdit ? (
                                     <button onClick={() => { setEditingTx(tx); setEditAmount(tx.amount); if (tx.type !== 'student_payment') setEditDescription(tx.description); setEditModalOpen(true); }} className={`p-1.5 text-gray-400 hover:${currentTheme.text} hover:bg-gray-100 rounded-lg transition-colors`}><Edit className="w-4 h-4" /></button>
-                                  ) : currentUser.role === 'student' && tx.type === 'student_payment' ? (
+                                ) : currentUser.role === 'student' && tx.type === 'student_payment' ? (
                                     <button onClick={() => { setNotifyTx(tx); setNotifyReason(''); setNotifyModalOpen(true); }} className="p-1.5 text-gray-400 hover:text-yellow-600 hover:bg-yellow-50 rounded-lg transition-colors"><Bell className="w-4 h-4" /></button>
-                                  ) : <span className="text-[10px] text-gray-300">-</span>}
+                                ) : <span className="text-[10px] text-gray-300">-</span>}
                                 </td>
-                              )}
+                            )}
                            </tr>
                           );
                         })}
