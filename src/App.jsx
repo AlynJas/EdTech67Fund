@@ -242,19 +242,21 @@ export default function App() {
     if (result.success === true && result.data.amount === parsedAmount) {
       setPaymentStep('success'); // ค่อยให้ผ่าน
       // ... (โค้ดบันทึกข้อมูลลงฐานข้อมูล) ...
-    } else {
-      // ถ้าไม่ผ่าน ให้แจ้งเตือน
-      alert(`ตรวจไม่ผ่าน! \nเหตุผล: ${result.message}`);
-      setPaymentStep('qr');
-    }
-  } catch (error) {
-      console.error("Error verifying slip:", error);
-      alert('เกิดข้อผิดพลาดในการเชื่อมต่อกับระบบตรวจสลิป กรุณาลองใหม่');
-      setPaymentStep('qr');
-    } finally {
-      setIsVerifying(false);
-    }
-  };
+    // --- ดำเนินการบันทึกข้อมูลลงฐานข้อมูล ---
+        const newTimestamp = new Date().toISOString();
+        const historyData = [{ action: 'create', amount: parsedAmount, recordedBy: currentUser.name, timestamp: newTimestamp }];
+        const newDbTx = {
+          type: 'student_payment', 
+          student_id: recordTarget.id, 
+          student_name: recordTarget.name,
+          fund_type: activeTab, 
+          term: selectedTerm, 
+          amount: parsedAmount, 
+          recorded_by: currentUser.name,
+          timestamp: newTimestamp, 
+          history: historyData,
+          slip_url: result.data ? result.data.url : null
+        };
 
     // ส่งข้อมูลบันทึกลง Supabase
     const { data, error } = await supabase.from('transactions').insert([newDbTx]).select();
@@ -278,6 +280,18 @@ export default function App() {
       closeRecordModal();
       setTimeout(() => setSuccessMsg(''), 4000);
     }, 1500); 
+  } else {
+        // ถ้าไม่ผ่าน ให้แจ้งเตือน
+        alert(`ตรวจไม่ผ่าน! \nเหตุผล: ${result.message}`);
+        setPaymentStep('qr');
+      }
+    } catch (error) {
+      console.error("Error verifying slip:", error);
+      alert('เกิดข้อผิดพลาดในการเชื่อมต่อกับระบบตรวจสลิป กรุณาลองใหม่');
+      setPaymentStep('qr');
+    } finally {
+      setIsVerifying(false);
+    }
   };
 
   const handleUploadSlip = (e, txId) => {
@@ -1065,3 +1079,4 @@ export default function App() {
       </main>
     </div>
   );
+}
