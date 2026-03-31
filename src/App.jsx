@@ -7,8 +7,52 @@ import {
   BookOpen, QrCode, Loader2, Upload 
 } from 'lucide-react';
 
-import { supabase } from './supabaseClient';
+// จำลอง (Mock) ฟังก์ชันของ supabase เพื่อให้สามารถแสดงผลพรีวิวบนหน้านี้ได้
+// หมายเหตุ: สำหรับการนำไปรันใน VS Code ของคุณจริงๆ ให้ลบโค้ด mock ตัวแปร supabase นี้ออก 
+// และเปิดใช้งาน `import { supabase } from './supabaseClient';` ตามเดิมครับ
+const supabase = {
+  from: () => ({
+    select: () => ({
+      order: () => Promise.resolve({ data: null, error: null })
+    }),
+    insert: (items) => ({
+      select: () => Promise.resolve({ data: items, error: null })
+    }),
+    update: () => ({
+      eq: () => Promise.resolve({ error: null })
+    })
+  })
+};
+
 // --- ข้อมูลจำลอง (Mock Data) ---
+const mockStudents = [
+  { id: '65001', name: 'นายสมชาย ใจดี' },
+  { id: '65002', name: 'นางสาวสมหญิง รักเรียน' },
+  { id: '65003', name: 'นายมานะ อดทน' },
+  { id: '65004', name: 'นางสาวปิติ ยินดี' },
+  { id: '65005', name: 'นายชูใจ ไชโย' },
+  { id: '65006', name: 'นางสาวสายใจ ใฝ่รู้' },
+  { id: '65007', name: 'นายวันชัย ชนะภัย' },
+];
+
+const mockTransactions = [
+  { 
+    id: 1, type: 'student_payment', studentId: '65001', studentName: 'นายสมชาย ใจดี', fundType: 'room', term: '2/1', amount: 500, slipUrl: null, recordedBy: 'ผู้ดูแลเงินห้อง', timestamp: new Date(Date.now() - 86400000).toISOString(),
+    history: [{ action: 'create', amount: 500, recordedBy: 'ผู้ดูแลเงินห้อง', timestamp: new Date(Date.now() - 86400000).toISOString() }]
+  },
+  { 
+    id: 2, type: 'student_payment', studentId: '65002', studentName: 'นางสาวสมหญิง รักเรียน', fundType: 'trip', term: '2/1', amount: 1500, slipUrl: null, recordedBy: 'ผู้ดูแลฟิวทริป', timestamp: new Date(Date.now() - 3600000).toISOString(),
+    history: [{ action: 'create', amount: 1500, recordedBy: 'ผู้ดูแลฟิวทริป', timestamp: new Date(Date.now() - 3600000).toISOString() }]
+  },
+  { 
+    id: 3, type: 'student_payment', studentId: '65003', studentName: 'นายมานะ อดทน', fundType: 'room', term: '2/1', amount: 200, slipUrl: null, recordedBy: 'นางสาวสมหญิง รักเรียน', timestamp: new Date().toISOString(),
+    history: [{ action: 'create', amount: 200, recordedBy: 'นางสาวสมหญิง รักเรียน', timestamp: new Date().toISOString() }]
+  },
+  {
+    id: 4, type: 'expense', description: 'ซื้อไม้กวาดและที่ตักขยะ', fundType: 'room', term: '2/1', amount: 150, slipUrl: null, recordedBy: 'ผู้ดูแลเงินห้อง', timestamp: new Date(Date.now() - 4000000).toISOString(),
+    history: [{ action: 'create', amount: 150, description: 'ซื้อไม้กวาดและที่ตักขยะ', recordedBy: 'ผู้ดูแลเงินห้อง', timestamp: new Date(Date.now() - 4000000).toISOString() }]
+  }
+];
 
 const users = {
   'admin_room': { password: 'password', role: 'admin_room', name: 'ผู้ดูแลเงินห้อง' },
@@ -42,7 +86,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('room'); 
   const [selectedTerm, setSelectedTerm] = useState('2/1'); 
   const [transactions, setTransactions] = useState([]); // เปลี่ยนมาใช้ array ว่างตอนเริ่ม
-  const [students, setStudents] = useState([]);
+  const [students, setStudents] = useState(mockStudents); // โหลดนักศึกษาตั้งต้น
   
   // Login State
   const [username, setUsername] = useState('');
@@ -55,6 +99,7 @@ export default function App() {
   const [amount, setAmount] = useState('');
   const [paymentStep, setPaymentStep] = useState('input');
   const [qrTimeLeft, setQrTimeLeft] = useState(180);
+  const [isVerifying, setIsVerifying] = useState(false); // เพิ่มสถานะกำลังโหลดตรวจสลิป
   
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingTx, setEditingTx] = useState(null);
@@ -74,7 +119,6 @@ export default function App() {
   const [notifyModalOpen, setNotifyModalOpen] = useState(false);
   const [notifyTx, setNotifyTx] = useState(null);
   const [notifyReason, setNotifyReason] = useState('');
-  const [isVerifying, setIsVerifying] = useState(false); // เพิ่มสถานะกำลังโหลดตรวจสลิป
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [historyTx, setHistoryTx] = useState(null);
 
@@ -92,7 +136,6 @@ export default function App() {
   // โหลดข้อมูลจาก Supabase ตอนเปิดเว็บครั้งแรก
   useEffect(() => {
     fetchTransactions();
-    fetchStudents();
   }, []);
 
   const fetchTransactions = async () => {
@@ -112,17 +155,6 @@ export default function App() {
         slipUrl: tx.slip_url
       }));
       setTransactions(formattedData);
-    }
-  };
-
-  const fetchStudents = async () => {
-    const { data, error } = await supabase
-      .from('students')
-      .select('*')
-      .order('id', { ascending: true }); // เรียงตามรหัสนักศึกษา
-      
-    if (data) {
-      setStudents(data);
     }
   };
 
@@ -217,37 +249,72 @@ export default function App() {
   };
 
   const handleVerifySlip = async (e) => {
-  const file = e.target.files[0]; // 1. ดึงไฟล์รูปภาพสลิปที่ผู้ใช้อัปโหลดมา
-  if (!file) return;
+    const file = e.target.files[0];
+    if (!file) return;
 
-  setIsVerifying(true); // เปิดไอคอนหมุนๆ ให้รู้ว่ากำลังตรวจ
+    setIsVerifying(true);
+    if (qrTimerRef.current) clearInterval(qrTimerRef.current);
 
-  try {
-    const formData = new FormData();
-    formData.append('files', file);
+    try {
+      const formData = new FormData();
+      formData.append('files', file);
 
-    // ดึงกุญแจ API จากไฟล์ .env
-    const branchId = import.meta.env.VITE_SLIPOK_BRANCH_ID;
-    const apiKey = import.meta.env.VITE_SLIPOK_API_KEY;
+      const branchId = import.meta.env.VITE_SLIPOK_BRANCH_ID;
+      const apiKey = import.meta.env.VITE_SLIPOK_API_KEY;
 
-    // 2. ส่งรูปสลิปไปให้ SlipOK ตรวจสอบ
-    const response = await fetch(`https://api.slipok.com/api/line/apikey/${branchId}`, {
-      method: 'POST',
-      headers: { 'x-authorization': apiKey },
-      body: formData
-    });
-    const result = await response.json();
+      const response = await fetch(`https://api.slipok.com/api/line/apikey/${branchId}`, {
+        method: 'POST',
+        headers: { 'x-authorization': apiKey },
+        body: formData
+      });
+      const result = await response.json();
 
-    // 3. เช็คผลลัพธ์: ถ้าตรวจผ่าน (success) และ ยอดเงินตรง (amount === parsedAmount)
-    if (result.success === true && result.data.amount === parsedAmount) {
-      setPaymentStep('success'); // ค่อยให้ผ่าน
-      // ... (โค้ดบันทึกข้อมูลลงฐานข้อมูล) ...
-    } else {
-      // ถ้าไม่ผ่าน ให้แจ้งเตือน
-      alert(`ตรวจไม่ผ่าน! \nเหตุผล: ${result.message}`);
-      setPaymentStep('qr');
-    }
-  } catch (error) {
+      if (result.success === true && result.data.amount === parsedAmount) {
+        setPaymentStep('success');
+
+        // โค้ดส่วนที่หลุดไป ถูกนำกลับมาใส่ในบล็อกนี้ครับ
+        const newTimestamp = new Date().toISOString();
+        const historyData = [{ action: 'create', amount: parsedAmount, recordedBy: currentUser.name, timestamp: newTimestamp }];
+        
+        const newDbTx = {
+          type: 'student_payment', 
+          student_id: recordTarget.id, 
+          student_name: recordTarget.name,
+          fund_type: activeTab, 
+          term: selectedTerm, 
+          amount: parsedAmount, 
+          recorded_by: currentUser.name,
+          timestamp: newTimestamp, 
+          history: historyData,
+          slip_url: result.data ? result.data.url : null
+        };
+
+        const { data, error } = await supabase.from('transactions').insert([newDbTx]).select();
+
+        if (data && data.length > 0) {
+          const formattedTx = {
+            ...data[0],
+            studentId: data[0].student_id,
+            studentName: data[0].student_name,
+            fundType: data[0].fund_type,
+            recordedBy: data[0].recorded_by,
+            slipUrl: data[0].slip_url
+          };
+          setTransactions(prev => [formattedTx, ...prev]);
+        }
+
+        setSuccessMsg(`บันทึกการชำระเงินให้ ${recordTarget.name} จำนวน ฿${parsedAmount} เรียบร้อยแล้ว!`);
+
+        paymentTimeoutRef.current = setTimeout(() => {
+          closeRecordModal();
+          setTimeout(() => setSuccessMsg(''), 4000);
+        }, 1500); 
+
+      } else {
+        alert(`ตรวจไม่ผ่าน! \nเหตุผล: ${result.message}`);
+        setPaymentStep('qr');
+      }
+    } catch (error) {
       console.error("Error verifying slip:", error);
       alert('เกิดข้อผิดพลาดในการเชื่อมต่อกับระบบตรวจสลิป กรุณาลองใหม่');
       setPaymentStep('qr');
@@ -255,31 +322,6 @@ export default function App() {
       setIsVerifying(false);
     }
   };
-};
-
-    // ส่งข้อมูลบันทึกลง Supabase
-    const { data, error } = await supabase.from('transactions').insert([newDbTx]).select();
-
-    if (data && data.length > 0) {
-      // เอาข้อมูลที่เพิ่งเซฟเสร็จมาอัปเดตหน้าจอทันที
-      const formattedTx = {
-        ...data[0],
-        studentId: data[0].student_id,
-        studentName: data[0].student_name,
-        fundType: data[0].fund_type,
-        recordedBy: data[0].recorded_by,
-        slipUrl: data[0].slip_url
-      };
-      setTransactions(prev => [formattedTx, ...prev]);
-    }
-
-    setSuccessMsg(`บันทึกการชำระเงินให้ ${recordTarget.name} จำนวน ฿${parsedAmount} เรียบร้อยแล้ว!`);
-
-    paymentTimeoutRef.current = setTimeout(() => {
-      closeRecordModal();
-      setTimeout(() => setSuccessMsg(''), 4000);
-    }, 1500); 
-
 
   const handleUploadSlip = (e, txId) => {
     const file = e.target.files[0];
@@ -811,46 +853,33 @@ export default function App() {
                       <div className="text-center animate-in fade-in zoom-in duration-300 flex flex-col items-center">
                         <p className="text-sm font-medium text-gray-500 mb-2">สแกนเพื่อชำระ {activeTab === 'room' ? 'เงินห้อง' : 'เงินฟิวทริป'}</p>
                         <div className="bg-white p-2 inline-block border-2 border-gray-100 rounded-2xl mb-2 relative">
-                           <img 
-                            src={`https://promptpay.io/1959300030540/${parsedAmount}.png`} 
-                            alt="PromptPay QR"
-                            className={`w-40 h-40 transition-opacity ${qrTimeLeft === 0 ? 'opacity-20' : 'opacity-100'}`}
-                            />
+                           {/* เปลี่ยน URL QR Code เป็นพร้อมเพย์ของจริง (แก้เบอร์ 0800000000 เป็นเบอร์ของคุณ) */}
+                           <img src={`https://promptpay.io/0800000000/${parsedAmount}.png`} className={`w-32 h-32 transition-opacity ${qrTimeLeft === 0 ? 'opacity-20' : 'opacity-100'}`} alt="PromptPay QR"/>
                            {qrTimeLeft === 0 && <div className="absolute inset-0 flex items-center justify-center"><span className="bg-red-100 text-red-600 px-3 py-1 rounded-full font-bold text-sm">หมดเวลา</span></div>}
                         </div>
                         <h3 className="text-2xl font-bold mb-2">฿{parsedAmount}</h3>
                         
                         {qrTimeLeft > 0 ? (
                           <div className="w-full space-y-2 mt-1">
-                            <div className={`flex items-center justify-center gap-2 ${currentTheme.text} mb-2`}>
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                              <span className="font-bold text-sm animate-pulse">รอรับยอดโอน... ({Math.floor(qrTimeLeft / 60)}:{(qrTimeLeft % 60).toString().padStart(2, '0')})</span>
-                            </div>
-                            {/* <button onClick={simulatePaymentReceived} className="w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl border border-gray-200 text-sm transition-colors">(จำลอง API) ได้รับเงินแล้ว</button> */}
-                            {/* เช็คก่อนว่ากำลังตรวจสลิปอยู่ไหม (isVerifying) */}
                             {isVerifying ? (
-                            // ถ้ากำลังตรวจ ให้โชว์ไอคอนหมุนๆ (Loader2)
-                            <div className="flex flex-col items-center justify-center py-4...">
-                                <Loader2 className={`w-8 h-8 animate-spin ...`} />
-                                <span className="font-bold text-sm text-gray-600">กำลังตรวจสอบสลิป...</span>
-                            </div>
+                              <div className="flex flex-col items-center justify-center py-4 bg-gray-50 rounded-xl border border-gray-100">
+                                <Loader2 className={`w-8 h-8 animate-spin ${currentTheme.text} mb-2`} />
+                                <span className="font-bold text-sm text-gray-600">AI กำลังตรวจสอบสลิป...</span>
+                              </div>
                             ) : (
-                            // ถ้าไม่ได้ตรวจ ให้โชว์ปุ่มอัปโหลดรูป
-                            <>
-                                <label className={`w-full py-2.5 text-white font-bold rounded-xl ... cursor-pointer`}>
-                                <Upload className="w-4 h-4" />
-                                <span>อัปโหลดสลิปเพื่อยืนยัน</span>
-
-                                <input type="file" accept="image/*" onChange={handleVerifySlip} className="hidden" />
+                              <>
+                                <div className={`flex items-center justify-center gap-2 ${currentTheme.text} mb-2`}>
+                                  <Clock className="w-4 h-4" />
+                                  <span className="font-bold text-sm">เมื่อโอนแล้ว กรุณาแนบสลิป ({Math.floor(qrTimeLeft / 60)}:{(qrTimeLeft % 60).toString().padStart(2, '0')})</span>
+                                </div>
+                                <label className={`w-full py-2.5 text-white font-bold rounded-xl text-sm transition-colors cursor-pointer flex justify-center items-center gap-2 shadow-sm ${currentTheme.btnPrimary}`}>
+                                  <Upload className="w-4 h-4" />
+                                  <span>อัปโหลดสลิปเพื่อยืนยัน</span>
+                                  {/* ซ่อน input file ไว้ใต้ปุ่มสวยๆ */}
+                                  <input type="file" accept="image/*" onChange={handleVerifySlip} className="hidden" />
                                 </label>
-                            </>
+                              </>
                             )}
-                            
-                            <label className={`w-full py-2.5 text-white font-bold rounded-xl text-sm transition-colors cursor-pointer flex justify-center items-center gap-2 shadow-sm ${currentTheme.btnPrimary}`}>
-                            <Upload className="w-4 h-4" />
-                            <span>อัปโหลดสลิปเพื่อยืนยัน</span>
-                            <input type="file" accept="image/*" onChange={handleVerifySlip} className="hidden" />
-                            </label>
                           </div>
                         ) : (
                           <div className="w-full space-y-2 mt-2">
@@ -1066,3 +1095,4 @@ export default function App() {
       </main>
     </div>
   );
+}
