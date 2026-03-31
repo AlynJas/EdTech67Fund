@@ -788,7 +788,11 @@ export default function App() {
                       <div className="text-center animate-in fade-in zoom-in duration-300 flex flex-col items-center">
                         <p className="text-sm font-medium text-gray-500 mb-2">สแกนเพื่อชำระ {activeTab === 'room' ? 'เงินห้อง' : 'เงินฟิวทริป'}</p>
                         <div className="bg-white p-2 inline-block border-2 border-gray-100 rounded-2xl mb-2 relative">
-                           <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=PROMPTPAY:0800000000:${parsedAmount}`} className={`w-32 h-32 transition-opacity ${qrTimeLeft === 0 ? 'opacity-20' : 'opacity-100'}`}/>
+                           <img 
+                            src={`https://promptpay.io/1959300030540/${parsedAmount}.png`} 
+                            alt="PromptPay QR"
+                            className={`w-40 h-40 transition-opacity ${qrTimeLeft === 0 ? 'opacity-20' : 'opacity-100'}`}
+                            />
                            {qrTimeLeft === 0 && <div className="absolute inset-0 flex items-center justify-center"><span className="bg-red-100 text-red-600 px-3 py-1 rounded-full font-bold text-sm">หมดเวลา</span></div>}
                         </div>
                         <h3 className="text-2xl font-bold mb-2">฿{parsedAmount}</h3>
