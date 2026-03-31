@@ -9,34 +9,6 @@ import {
 
 import { supabase } from './supabaseClient';
 // --- ข้อมูลจำลอง (Mock Data) ---
-const mockStudents = [
-  { id: '65001', name: 'นายสมชาย ใจดี' },
-  { id: '65002', name: 'นางสาวสมหญิง รักเรียน' },
-  { id: '65003', name: 'นายมานะ อดทน' },
-  { id: '65004', name: 'นางสาวปิติ ยินดี' },
-  { id: '65005', name: 'นายชูใจ ไชโย' },
-  { id: '65006', name: 'นางสาวสายใจ ใฝ่รู้' },
-  { id: '65007', name: 'นายวันชัย ชนะภัย' },
-];
-
-const mockTransactions = [
-  { 
-    id: 1, type: 'student_payment', studentId: '65001', studentName: 'นายสมชาย ใจดี', fundType: 'room', term: '2/1', amount: 500, slipUrl: null, recordedBy: 'ผู้ดูแลเงินห้อง', timestamp: new Date(Date.now() - 86400000).toISOString(),
-    history: [{ action: 'create', amount: 500, recordedBy: 'ผู้ดูแลเงินห้อง', timestamp: new Date(Date.now() - 86400000).toISOString() }]
-  },
-  { 
-    id: 2, type: 'student_payment', studentId: '65002', studentName: 'นางสาวสมหญิง รักเรียน', fundType: 'trip', term: '2/1', amount: 1500, slipUrl: null, recordedBy: 'ผู้ดูแลฟิวทริป', timestamp: new Date(Date.now() - 3600000).toISOString(),
-    history: [{ action: 'create', amount: 1500, recordedBy: 'ผู้ดูแลฟิวทริป', timestamp: new Date(Date.now() - 3600000).toISOString() }]
-  },
-  { 
-    id: 3, type: 'student_payment', studentId: '65003', studentName: 'นายมานะ อดทน', fundType: 'room', term: '2/1', amount: 200, slipUrl: null, recordedBy: 'นางสาวสมหญิง รักเรียน', timestamp: new Date().toISOString(),
-    history: [{ action: 'create', amount: 200, recordedBy: 'นางสาวสมหญิง รักเรียน', timestamp: new Date().toISOString() }]
-  },
-  {
-    id: 4, type: 'expense', description: 'ซื้อไม้กวาดและที่ตักขยะ', fundType: 'room', term: '2/1', amount: 150, slipUrl: null, recordedBy: 'ผู้ดูแลเงินห้อง', timestamp: new Date(Date.now() - 4000000).toISOString(),
-    history: [{ action: 'create', amount: 150, description: 'ซื้อไม้กวาดและที่ตักขยะ', recordedBy: 'ผู้ดูแลเงินห้อง', timestamp: new Date(Date.now() - 4000000).toISOString() }]
-  }
-];
 
 const users = {
   'admin_room': { password: 'password', role: 'admin_room', name: 'ผู้ดูแลเงินห้อง' },
@@ -70,7 +42,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('room'); 
   const [selectedTerm, setSelectedTerm] = useState('2/1'); 
   const [transactions, setTransactions] = useState([]); // เปลี่ยนมาใช้ array ว่างตอนเริ่ม
-  const [students, setStudents] = useState(mockStudents); // โหลดนักศึกษาตั้งต้น
+  const [students, setStudents] = useState([]);
   
   // Login State
   const [username, setUsername] = useState('');
@@ -119,6 +91,7 @@ export default function App() {
   // โหลดข้อมูลจาก Supabase ตอนเปิดเว็บครั้งแรก
   useEffect(() => {
     fetchTransactions();
+    fetchStudents();
   }, []);
 
   const fetchTransactions = async () => {
@@ -138,6 +111,17 @@ export default function App() {
         slipUrl: tx.slip_url
       }));
       setTransactions(formattedData);
+    }
+  };
+
+  const fetchStudents = async () => {
+    const { data, error } = await supabase
+      .from('students')
+      .select('*')
+      .order('id', { ascending: true }); // เรียงตามรหัสนักศึกษา
+      
+    if (data) {
+      setStudents(data);
     }
   };
 
