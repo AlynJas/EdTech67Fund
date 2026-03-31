@@ -4,7 +4,7 @@ import {
   CheckCircle2, Clock, ShieldAlert, Edit, Search, Calendar, 
   X, Bell, MessageSquare, Check, History, Target, PieChart, 
   ArrowUpCircle, ArrowDownCircle, FileText, Image as ImageIcon, 
-  BookOpen, QrCode, Loader2, Upload, AlertCircle, KeyRound
+  BookOpen, QrCode, Loader2, Upload, AlertCircle, KeyRound, Table, LayoutList
 } from 'lucide-react';
 
 import { supabase } from './supabaseClient';
@@ -95,6 +95,8 @@ export default function App() {
   const [studentSearchQuery, setStudentSearchQuery] = useState(''); 
   const [successMsg, setSuccessMsg] = useState('');
 
+  const [showTableView, setShowTableView] = useState(false);
+  
   const paymentTimeoutRef = useRef(null);
   const qrTimerRef = useRef(null);
 
@@ -147,6 +149,39 @@ export default function App() {
     window.addEventListener('click', handleActivity);
     window.addEventListener('keydown', handleActivity);
     
+    // --- เพิ่มใหม่: ลอจิกสำหรับคำนวณตาราง Excel 18 สัปดาห์ ---
+  const weeklyRate = rules.rate || 10; // เรทการจ่ายต่อสัปดาห์ (ดึงจากกฎ)
+  const totalWeeksToDisplay = 18; // จำนวนสัปดาห์ที่ต้องการแสดง
+
+  const studentsWithSummary = filteredStudents.map(student => {
+    // 1. คำนวณยอดที่จ่ายแล้วทั้งหมดของนักศึกษาคนนี้ (ไม่รวมรายการที่รอสลิป)
+    const totalPaid = currentFundTransactions
+      .filter(tx => tx.studentId === student.id && tx.type === 'student_payment' && tx.status !== 'pending')
+      .reduce((sum, tx) => sum + tx.amount, 0);
+    
+    const targetAmount = activeTab === 'room' ? STUDENT_TARGET_ROOM : STUDENT_TARGET_TRIP;
+    const remainingAmount = Math.max(0, targetAmount - totalPaid);
+
+    // 2. ลอจิกการกระจายยอดเงินลงแต่ละสัปดาห์
+    const weeks = [];
+    let remainingToDistribute = totalPaid;
+    
+    for (let i = 1; i <= totalWeeksToDisplay; i++) {
+      if (remainingToDistribute >= weeklyRate) {
+        weeks.push(weeklyRate); // จ่ายเต็มสัปดาห์
+        remainingToDistribute -= weeklyRate;
+      } else if (remainingToDistribute > 0) {
+        weeks.push(remainingToDistribute); // จ่ายแบบมีเศษเหลือ
+        remainingToDistribute = 0;
+      } else {
+        weeks.push(''); // ยังไม่จ่าย (ปล่อยว่าง)
+      }
+    }
+
+    // ส่งคืนข้อมูลนักศึกษา พร้อมข้อมูล weeks แบบ Array 18 ช่อง
+    return { ...student, totalPaid, targetAmount, remainingAmount, weeks };
+  });
+  
     return () => {
       // ล้างตัวดักจับออกเมื่อปิดหน้าเว็บ
       window.removeEventListener('click', handleActivity);
@@ -816,6 +851,137 @@ export default function App() {
               <div className="p-4 bg-white/20 rounded-full backdrop-blur-sm hidden sm:block">{activeTab === 'room' ? <Users className="w-10 h-10" /> : <Wallet className="w-10 h-10" />}</div>
             </div>
 
+            {/* --- เพิ่มใหม่: ปุ่มกดสลับหน้าจอ --- */}
+            <div className="flex justify-end">
+              <button 
+                onClick={() => setShowTableView(!showTableView)} 
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm transition-all shadow-sm border ${showTableView ? currentTheme.bgActive : 'bg-white text-gray-600 hover:bg-gray-50 border-gray-200'}`}
+              >
+                {showTableView ? <><LayoutList className="w-4 h-4"/> กลับไปมุมมองปกติ</> : <><Table className="w-4 h-4"/> ดูข้อมูลแบบตาราง (Excel)</>}
+              </button>
+            </div>
+
+            {/* --- เพิ่มใหม่: เงื่อนไขสลับการวาดหน้าจอ (Ternary Operator) --- */}
+            {showTableView ? (
+              <div className="space-y-8 animate-in fade-in duration-300">
+                {/* 1. ตารางเงินเก็บ 18 สัปดาห์ (แต่งให้เหมือน Excel) */}
+                <div className="bg-white shadow-sm overflow-hidden">
+                  <div className="px-6 py-4 flex justify-between items-center bg-white border-b border-gray-300">
+                    <h3 className={`font-bold text-lg flex items-center gap-2 ${currentTheme.text}`}>
+                      <Table className="w-5 h-5" /> 
+                      {/* แก้ชื่อตารางให้เหมือนในภาพเป๊ะๆ */}
+                      เงินเก็บรับน้อง {activeTab === 'room' ? 'ED-TECH' : 'ฟิวทริป'} เทอม {formatTermName(selectedTerm).replace('ปี ', '').replace(' เทอม ', ' / ')}
+                    </h3>
+                    <div className="relative w-64">
+                      <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input type="text" placeholder="ค้นหารหัสนศ. หรือ ชื่อ..." value={studentSearchQuery} onChange={(e) => setStudentSearchQuery(e.target.value)} className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white" />
+                    </div>
+                  </div>
+                  
+                  {/* ตารางแนวนอน 18 วีค ขอบแบบ Excel */}
+                  <div className="overflow-x-auto pb-4">
+                    <table className="w-full text-sm text-left border-collapse min-w-max border border-gray-300">
+                      <thead>
+                        <tr>
+                          {/* หัวตาราง 3 คอลัมน์แรก พื้นหลังสีฟ้าอ่อนเหมือนรูปภาพ */}
+                          <th className="px-4 py-2 font-bold border border-gray-300 text-center w-16 bg-blue-100 text-blue-900">ลำดับ</th>
+                          <th className="px-4 py-2 font-bold border border-gray-300 w-28 bg-blue-100 text-blue-900">รหัสนักศึกษา</th>
+                          <th className="px-4 py-2 font-bold border border-gray-300 w-48 sticky left-0 z-10 bg-blue-100 text-blue-900 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">ชื่อ - นามสกุล</th>
+                          
+                          {/* หัวตาราง Week 1-18 พื้นหลังสีม่วงอ่อนเหมือนรูปภาพ */}
+                          {Array.from({ length: 18 }).map((_, i) => (
+                            <th key={i} className="px-2 py-2 font-bold border border-gray-300 text-center min-w-[70px] bg-purple-100 text-purple-900">Week {i + 1}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {studentsWithSummary.map((s, idx) => (
+                          <tr key={s.id} className="hover:bg-gray-50 transition-colors">
+                            {/* ข้อมูล 3 คอลัมน์แรก */}
+                            <td className="px-4 py-2 text-center text-gray-800 border border-gray-300 bg-white">{idx + 1}</td>
+                            <td className="px-4 py-2 font-mono text-gray-800 border border-gray-300 bg-white">{s.id}</td>
+                            <td className="px-4 py-2 font-medium text-gray-800 border border-gray-300 sticky left-0 bg-white z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">{s.name}</td>
+                            
+                            {/* ข้อมูลยอดเงินรายสัปดาห์ */}
+                            {s.weeks.map((amount, i) => (
+                              <td key={i} className="px-2 py-2 text-center border border-gray-300 text-gray-800 bg-white">
+                                {amount}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                        {/* แถวสรุปยอดรวมด้านล่างสุด */}
+                        <tr className="bg-gray-100 font-bold">
+                          <td colSpan="3" className="px-4 py-3 text-right border border-gray-300 bg-emerald-100 text-emerald-900">รวมรับทั้งหมด:</td>
+                          <td colSpan="18" className={`px-4 py-3 text-left border border-gray-300 bg-emerald-50 text-emerald-800`}>฿{totalActiveFund.toLocaleString()}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* 2. ตารางรายรับ-รายจ่ายอื่นๆ (แต่งขอบให้เหมือนภาพ) */}
+                <div className="bg-white shadow-sm overflow-hidden">
+                  <div className="px-6 py-4 border-b border-gray-300 bg-white flex justify-between items-center">
+                    <h3 className="font-bold text-lg text-emerald-700 flex items-center gap-2">
+                      <FileText className="w-5 h-5" /> รายรับ - รายจ่ายอื่น ๆ
+                    </h3>
+                    <div className="flex gap-2">
+                      <div className="relative w-48">
+                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <input type="text" placeholder="ค้นหารายการ..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white" />
+                      </div>
+                      {currentUser && currentUser.role === `admin_${activeTab}` && (
+                        <button onClick={() => { setOtherType('income'); setOtherAmount(''); setOtherDescription(''); setOtherSlip(null); setOtherRecordModalOpen(true); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"><PlusCircle className="w-3.5 h-3.5" /> เพิ่มรายการ</button>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="overflow-x-auto pb-4">
+                    <table className="w-full text-sm text-left border-collapse border border-gray-300">
+                      <thead className="bg-purple-100 text-purple-900">
+                        <tr>
+                          {/* แก้ไขชื่อคอลัมน์ให้ตรงกับรูปภาพเป๊ะๆ และใส่เส้นขอบทึบ */}
+                          <th className="px-4 py-2 font-bold border border-gray-300 w-32 text-center">วัน/เดือน/ปี</th>
+                          <th className="px-4 py-2 font-bold border border-gray-300 text-center">รายการ</th>
+                          <th className="px-4 py-2 font-bold border border-gray-300 text-center w-32">จำนวน (บาท)</th>
+                          <th className="px-4 py-2 font-bold border border-gray-300 w-48 text-center">หมายเหตุ</th>
+                          <th className="px-4 py-2 font-bold border border-gray-300 text-center w-32">หลักฐานการโอน</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white">
+                        {filteredOtherTransactions.length > 0 ? filteredOtherTransactions.map((tx, idx) => (
+                          <tr key={tx.id} className="hover:bg-gray-50 transition-colors">
+                            <td className="px-4 py-2 text-center text-gray-800 border border-gray-300">
+                              {new Date(tx.timestamp).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                            </td>
+                            <td className="px-4 py-2 font-medium text-gray-800 border border-gray-300">{tx.description}</td>
+                            <td className="px-4 py-2 text-center border border-gray-300">
+                              {/* ทำให้ตัวเลขชิดขวานิดๆ แต่ยังอยู่ตรงกลาง เหมือนในรูป */}
+                              <span className={`block font-medium ${tx.type === 'income' ? 'text-gray-800' : 'text-gray-800'}`}>
+                                {tx.type === 'expense' ? '-' : ''}{tx.amount}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2 text-gray-600 border border-gray-300 text-xs text-center">{tx.recordedBy}</td>
+                            <td className="px-4 py-2 text-center border border-gray-300">
+                              {tx.slipUrl ? (
+                                <button onClick={() => { setCurrentSlip(tx.slipUrl); setSlipModalOpen(true); }} className="text-blue-500 hover:text-blue-700 mx-auto block" title="ดูหลักฐาน"><ImageIcon className="w-5 h-5" /></button>
+                              ) : (
+                                <span className="text-gray-300">-</span>
+                              )}
+                            </td>
+                          </tr>
+                        )) : (
+                          <tr><td colSpan="5" className="px-4 py-8 text-center text-gray-400 border border-gray-300">ไม่พบรายการรายรับ-รายจ่ายอื่นๆ</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+            ) : (
+
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-[700px] lg:col-span-7">
                 <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
@@ -948,7 +1114,8 @@ export default function App() {
                 </div>
               </div>
             </div>
-          </div>
+            )}
+        </div>
         )}
 
         {/* LOGIN VIEW */}
