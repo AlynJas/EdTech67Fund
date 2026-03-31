@@ -166,10 +166,6 @@ export default function App() {
     
     const targetAmount = activeTab === 'room' ? STUDENT_TARGET_ROOM : STUDENT_TARGET_TRIP;
     const remainingAmount = Math.max(0, targetAmount - totalPaid);
-
-    // 2. ลอจิกการกระจายยอดเงินลงแต่ละสัปดาห์
-    const weeks = [];
-    let remainingToDistribute = totalPaid;
     
     for (let i = 1; i <= totalWeeksToDisplay; i++) {
       if (remainingToDistribute >= weeklyRate) {
