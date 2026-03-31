@@ -9,7 +9,6 @@ import {
 
 import { supabase } from './supabaseClient';
 // --- ข้อมูลจำลอง (Mock Data) ---
-
 const users = {
   'admin_room': { password: 'password', role: 'admin_room', name: 'ผู้ดูแลเงินห้อง' },
   'admin_trip': { password: 'password', role: 'admin_trip', name: 'ผู้ดูแลฟิวทริป' }
