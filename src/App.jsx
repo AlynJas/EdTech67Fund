@@ -230,11 +230,16 @@ export default function App() {
     const branchId = import.meta.env.VITE_SLIPOK_BRANCH_ID;
     const apiKey = import.meta.env.VITE_SLIPOK_API_KEY;
 
-    // 2. ส่งรูปสลิปไปให้ SlipOK ตรวจสอบ
-    const response = await fetch(`https://api.slipok.com/api/line/apikey/${branchId}`, {
-      method: 'POST',
-      headers: { 'x-authorization': apiKey },
-      body: formData
+    // 1. สร้าง URL เป้าหมาย (SlipOK)
+    const targetUrl = `https://api.slipok.com/api/line/apikey/${branchId}`;
+    // 2. เอา URL เป้าหมายไปต่อท้าย URL ของท่อลอด (CORS Proxy)
+    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+
+    // 3. ส่งข้อมูลไปที่ท่อลอดแทน
+    const response = await fetch(proxyUrl, {
+    method: 'POST',
+    headers: { 'x-authorization': apiKey },
+    body: formData
     });
     const result = await response.json();
 
