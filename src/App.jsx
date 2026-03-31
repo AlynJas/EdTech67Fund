@@ -154,9 +154,15 @@ export default function App() {
   const totalWeeksToDisplay = 18;
 
   const studentsWithSummary = filteredStudents.map(student => {
+    // ใช้ String().trim() เพื่อป้องกันช่องว่างแฝงจากฐานข้อมูล
     const totalPaid = currentFundTransactions
-      .filter(tx => tx?.studentId === student?.id && tx?.type === 'student_payment' && tx?.status !== 'pending')
-      .reduce((sum, tx) => sum + (tx?.amount || 0), 0);
+      .filter(tx => String(tx?.studentId).trim() === String(student?.id).trim() && tx?.type === 'student_payment' && tx?.status !== 'pending')
+      .reduce((sum, tx) => sum + (Number(tx?.amount) || 0), 0);
+      
+    // บังคับให้การวนลูป 18 สัปดาห์เป็นตัวเลขทั้งหมด
+    const safeWeeklyRate = Number(rules?.rate) || 10;
+    const weeks = [];
+    let remainingToDistribute = Number(totalPaid) || 0;
     
     const targetAmount = activeTab === 'room' ? STUDENT_TARGET_ROOM : STUDENT_TARGET_TRIP;
     const remainingAmount = Math.max(0, targetAmount - totalPaid);
@@ -240,7 +246,7 @@ export default function App() {
     let user = users[username]; // ตรวจสอบว่าเป็นแอดมินจำลองไหม
     
     if (!user) {
-      const student = students.find(s => s.id === username);
+      const student = students.find(s => String(s?.id) === String(username));
       if (student) {
         // --- แก้ไข: ใช้รหัสผ่านจาก DB (ถ้าใน DB เป็นค่าว่าง จะให้ใช้คำว่า 'password' แทน) ---
         user = { password: student.password || 'password', role: 'student', name: student.name };
@@ -284,7 +290,7 @@ export default function App() {
     if (targetUser) {
       isMockAdmin = true;
     } else {
-      const student = students.find(s => s.id === cpUsername);
+      const student = students.find(s => String(s?.id) === String(cpUsername));
       if (student) {
         // เอารหัสเดิมจากฐานข้อมูลมาเตรียมไว้ตรวจสอบ
         targetUser = { password: student.password || 'password', id: student.id };
@@ -912,10 +918,14 @@ export default function App() {
                             <td className="px-4 py-2 font-medium text-gray-800 border border-gray-300 sticky left-0 bg-white z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">{s?.name}</td>
                             
                             {/* ข้อมูลยอดเงินรายสัปดาห์ */}
-                            {s?.weeks?.map((amount, i) => (
-                              <td key={i} className="px-2 py-2 text-center border border-gray-300 text-gray-800 bg-white">
-                                {amount}
-                              </td>
+                            {s?.weeks?.map((weekAmount, i) => (
+                            <td key={i} className="px-2 py-2 text-center border border-gray-300 bg-white">
+                                {weekAmount !== '' ? (
+                                <span className="font-semibold text-emerald-600">{weekAmount}</span>
+                                ) : (
+                                <span className="text-gray-300">-</span>
+                                )}
+                            </td>
                             ))}
                           </tr>
                         ))}
