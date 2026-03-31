@@ -7,6 +7,23 @@ import {
   BookOpen, QrCode, Loader2, Upload 
 } from 'lucide-react';
 
+// จำลอง (Mock) ฟังก์ชันของ supabase เพื่อให้สามารถแสดงผลพรีวิวบนหน้านี้ได้
+// หมายเหตุ: สำหรับการนำไปรันใน VS Code ของคุณจริงๆ ให้ลบโค้ด mock ตัวแปร supabase นี้ออก 
+// และเปิดใช้งาน `import { supabase } from './supabaseClient';` ตามเดิมครับ
+const supabase = {
+  from: () => ({
+    select: () => ({
+      order: () => Promise.resolve({ data: null, error: null })
+    }),
+    insert: (items) => ({
+      select: () => Promise.resolve({ data: items, error: null })
+    }),
+    update: () => ({
+      eq: () => Promise.resolve({ error: null })
+    })
+  })
+};
+
 // --- ข้อมูลจำลอง (Mock Data) ---
 const mockStudents = [
   { id: '65001', name: 'นายสมชาย ใจดี' },
@@ -68,7 +85,8 @@ export default function App() {
   const [currentView, setCurrentView] = useState('overview'); 
   const [activeTab, setActiveTab] = useState('room'); 
   const [selectedTerm, setSelectedTerm] = useState('2/1'); 
-  const [transactions, setTransactions] = useState(mockTransactions);
+  const [transactions, setTransactions] = useState([]); // เปลี่ยนมาใช้ array ว่างตอนเริ่ม
+  const [students, setStudents] = useState(mockStudents); // โหลดนักศึกษาตั้งต้น
   
   // Login State
   const [username, setUsername] = useState('');
@@ -114,6 +132,31 @@ export default function App() {
   // Body Scroll Lock for Modals
   const isAnyModalOpen = recordModalOpen || editModalOpen || otherRecordModalOpen || slipModalOpen || notifyModalOpen || historyModalOpen;
   
+  // โหลดข้อมูลจาก Supabase ตอนเปิดเว็บครั้งแรก
+  useEffect(() => {
+    fetchTransactions();
+  }, []);
+
+  const fetchTransactions = async () => {
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('*')
+      .order('timestamp', { ascending: false });
+      
+    if (data) {
+      // แปลงข้อมูลจากฐานข้อมูลให้ชื่อตัวแปรตรงกับที่แอพของคุณใช้
+      const formattedData = data.map(tx => ({
+        ...tx,
+        studentId: tx.student_id,
+        studentName: tx.student_name,
+        fundType: tx.fund_type,
+        recordedBy: tx.recorded_by,
+        slipUrl: tx.slip_url
+      }));
+      setTransactions(formattedData);
+    }
+  };
+
   useEffect(() => {
     if (isAnyModalOpen) {
       document.body.style.overflow = 'hidden';
@@ -134,7 +177,7 @@ export default function App() {
     e.preventDefault();
     let user = users[username];
     if (!user) {
-      const student = mockStudents.find(s => s.id === username);
+      const student = students.find(s => s.id === username);
       if (student) user = { password: 'password', role: 'student', name: student.name };
     }
     if (user && user.password === password) {
@@ -204,18 +247,41 @@ export default function App() {
     }, 1000);
   };
 
-  const simulatePaymentReceived = () => {
+  const simulatePaymentReceived = async () => {
     if (qrTimerRef.current) clearInterval(qrTimerRef.current);
     setPaymentStep('success');
     
     const newTimestamp = new Date().toISOString();
-    const newTransaction = {
-      id: Date.now(), type: 'student_payment', studentId: recordTarget.id, studentName: recordTarget.name,
-      fundType: activeTab, term: selectedTerm, amount: parsedAmount, slipUrl: null, recordedBy: currentUser.name,
-      timestamp: newTimestamp, history: [{ action: 'create', amount: parsedAmount, recordedBy: currentUser.name, timestamp: newTimestamp }]
+    const historyData = [{ action: 'create', amount: parsedAmount, recordedBy: currentUser.name, timestamp: newTimestamp }];
+    
+    const newDbTx = {
+      type: 'student_payment', 
+      student_id: recordTarget.id, 
+      student_name: recordTarget.name,
+      fund_type: activeTab, 
+      term: selectedTerm, 
+      amount: parsedAmount, 
+      recorded_by: currentUser.name,
+      timestamp: newTimestamp, 
+      history: historyData
     };
 
-    setTransactions(prev => [newTransaction, ...prev]);
+    // ส่งข้อมูลบันทึกลง Supabase
+    const { data, error } = await supabase.from('transactions').insert([newDbTx]).select();
+
+    if (data && data.length > 0) {
+      // เอาข้อมูลที่เพิ่งเซฟเสร็จมาอัปเดตหน้าจอทันที
+      const formattedTx = {
+        ...data[0],
+        studentId: data[0].student_id,
+        studentName: data[0].student_name,
+        fundType: data[0].fund_type,
+        recordedBy: data[0].recorded_by,
+        slipUrl: data[0].slip_url
+      };
+      setTransactions(prev => [formattedTx, ...prev]);
+    }
+
     setSuccessMsg(`บันทึกการชำระเงินให้ ${recordTarget.name} จำนวน ฿${parsedAmount} เรียบร้อยแล้ว!`);
 
     paymentTimeoutRef.current = setTimeout(() => {
@@ -234,35 +300,71 @@ export default function App() {
     setTimeout(() => setSuccessMsg(''), 3000);
   };
 
-  const handleRecordOther = (e) => {
+  const handleRecordOther = async (e) => {
     e.preventDefault();
     if (!currentUser || !otherAmount || !otherDescription) return;
     const newTimestamp = new Date().toISOString();
     const slipUrl = otherSlip ? URL.createObjectURL(otherSlip) : null;
-    const newTransaction = {
-      id: Date.now(), type: otherType, description: otherDescription, slipUrl: slipUrl, fundType: activeTab,
-      term: selectedTerm, amount: parseFloat(otherAmount), recordedBy: currentUser.name, timestamp: newTimestamp,
-      history: [{ action: 'create', amount: parseFloat(otherAmount), description: otherDescription, recordedBy: currentUser.name, timestamp: newTimestamp }]
+    
+    const historyData = [{ action: 'create', amount: parseFloat(otherAmount), description: otherDescription, recordedBy: currentUser.name, timestamp: newTimestamp }];
+    
+    const newDbTx = {
+      type: otherType, 
+      description: otherDescription, 
+      slip_url: slipUrl, 
+      fund_type: activeTab,
+      term: selectedTerm, 
+      amount: parseFloat(otherAmount), 
+      recorded_by: currentUser.name, 
+      timestamp: newTimestamp,
+      history: historyData
     };
-    setTransactions([newTransaction, ...transactions]);
+
+    // ส่งข้อมูลบันทึกลง Supabase
+    const { data, error } = await supabase.from('transactions').insert([newDbTx]).select();
+
+    if (data && data.length > 0) {
+      const formattedTx = {
+         ...data[0], fundType: data[0].fund_type, recordedBy: data[0].recorded_by, slipUrl: data[0].slip_url
+      };
+      setTransactions([formattedTx, ...transactions]);
+    }
+
     setSuccessMsg(`บันทึก${otherType === 'income' ? 'รายรับ' : 'รายจ่าย'} สำเร็จ!`);
     setOtherRecordModalOpen(false); setOtherAmount(''); setOtherDescription(''); setOtherSlip(null);
     setTimeout(() => setSuccessMsg(''), 3000);
   };
 
-  const submitEdit = (e) => {
+  const submitEdit = async (e) => {
     e.preventDefault();
     if (!editingTx || !editAmount) return;
     const newTimestamp = new Date().toISOString();
     const newAmount = parseFloat(editAmount);
-    const updatedTx = transactions.map(t => {
-      if (t.id === editingTx.id) {
-        const historyEntry = { action: 'edit', amount: newAmount, description: editingTx.type !== 'student_payment' ? editDescription : undefined, recordedBy: currentUser.name, timestamp: newTimestamp };
-        return { ...t, amount: newAmount, description: editingTx.type !== 'student_payment' ? editDescription : t.description, history: [...(t.history || []), historyEntry] };
-      }
-      return t;
-    });
-    setTransactions(updatedTx);
+    
+    // ดึงประวัติเดิมมาเพิ่มประวัติใหม่
+    const currentHistory = editingTx.history || [];
+    const historyEntry = { action: 'edit', amount: newAmount, description: editingTx.type !== 'student_payment' ? editDescription : undefined, recordedBy: currentUser.name, timestamp: newTimestamp };
+    const updatedHistory = [...currentHistory, historyEntry];
+
+    const updateData = {
+      amount: newAmount,
+      description: editingTx.type !== 'student_payment' ? editDescription : editingTx.description,
+      history: updatedHistory
+    };
+
+    // อัปเดตข้อมูลที่แก้ไขกลับไปที่ Supabase
+    const { error } = await supabase.from('transactions').update(updateData).eq('id', editingTx.id);
+
+    if (!error) {
+      const updatedTx = transactions.map(t => {
+        if (t.id === editingTx.id) {
+          return { ...t, ...updateData };
+        }
+        return t;
+      });
+      setTransactions(updatedTx);
+    }
+
     setEditModalOpen(false); setSuccessMsg('แก้ไขข้อมูลสำเร็จ!'); setTimeout(() => setSuccessMsg(''), 3000);
   };
 
@@ -287,7 +389,7 @@ export default function App() {
   const currentFundTransactions = termTransactions.filter(t => t.fundType === activeTab);
   const totalActiveFund = calculateNetTotal(currentFundTransactions);
 
-  const filteredStudents = mockStudents.filter(s => s.name.includes(studentSearchQuery) || s.id.includes(studentSearchQuery));
+  const filteredStudents = students.filter(s => s.name.includes(studentSearchQuery) || s.id.includes(studentSearchQuery));
   const studentsWithSummary = filteredStudents.map(student => {
     const totalPaid = currentFundTransactions.filter(tx => tx.studentId === student.id && tx.type === 'student_payment').reduce((sum, tx) => sum + tx.amount, 0);
     const targetAmount = activeTab === 'room' ? STUDENT_TARGET_ROOM : STUDENT_TARGET_TRIP;
@@ -310,7 +412,7 @@ export default function App() {
   const totalRoomFundOverview = calculateNetTotal(roomTransactions);
   const totalTripFundOverview = calculateNetTotal(tripTransactions);
   const totalAllFunds = totalRoomFundOverview + totalTripFundOverview;
-  const totalMembersCount = mockStudents.length;
+  const totalMembersCount = students.length;
 
   const roomPercent = Math.min((totalRoomFundOverview / TARGET_ROOM) * 100, 100);
   const tripPercent = Math.min((totalTripFundOverview / TARGET_TRIP) * 100, 100);
