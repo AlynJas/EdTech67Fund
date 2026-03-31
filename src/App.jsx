@@ -14,6 +14,9 @@ const users = {
   'admin_trip': { password: 'password', role: 'admin_trip', name: 'ผู้ดูแลฟิวทริป' }
 };
 
+const SESSION_KEY = 'cs2_fund_session';
+const TEN_DAYS_MS = 10 * 24 * 60 * 60 * 1000;
+
 // --- ตั้งเป้าหมาย (Targets) ---
 const TARGET_ROOM = 15000;
 const TARGET_TRIP = 50000;
@@ -47,6 +50,14 @@ export default function App() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
+
+  // --- เพิ่มใหม่ทั้งหมด: Change Password State ---
+  const [cpModalOpen, setCpModalOpen] = useState(false); // ควบคุมการเปิด/ปิดหน้าต่างเปลี่ยนรหัส
+  const [cpUsername, setCpUsername] = useState(''); // เก็บชื่อผู้ใช้ที่กรอก
+  const [cpOldPassword, setCpOldPassword] = useState(''); // เก็บรหัสผ่านเดิมที่กรอก
+  const [cpNewPassword, setCpNewPassword] = useState(''); // เก็บรหัสผ่านใหม่ที่กรอก
+  const [cpError, setCpError] = useState(''); // เก็บข้อความแจ้งเตือน Error
+  const [cpSuccess, setCpSuccess] = useState(''); // เก็บข้อความแจ้งเตือนเมื่อสำเร็จ
 
   // Payment Record Modal State
   const [recordModalOpen, setRecordModalOpen] = useState(false);
@@ -94,7 +105,54 @@ export default function App() {
   useEffect(() => {
     fetchTransactions();
     fetchStudents();
+    
+    // --- เพิ่มใหม่ทั้งหมด: เช็ค Session ล็อกอินตอนเปิดเว็บ ---
+    const savedSessionStr = localStorage.getItem(SESSION_KEY); // ไปค้นหาข้อมูลที่เซฟไว้ในเครื่อง
+    if (savedSessionStr) { // ถ้าเคยล็อกอินไว้
+      try {
+        const session = JSON.parse(savedSessionStr); // แปลงข้อมูลที่ได้มาเป็น Object
+        // เช็คว่าเวลาล่าสุดที่ใช้งาน ยังไม่เกิน 10 วันใช่ไหม (เวลาปัจจุบัน ลบ เวลาล่าสุด < 10 วัน)
+        if (Date.now() - session.lastActive < TEN_DAYS_MS) {
+          setCurrentUser(session.user); // สั่งล็อกอินอัตโนมัติทันที
+          
+          // อัปเดตเวลาล่าสุด (ต่ออายุ) ทันทีที่เปิดเว็บ
+          session.lastActive = Date.now();
+          localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+        } else {
+          // ถ้าเกิน 10 วันให้ลบเซสชั่นทิ้ง (ล็อกเอาท์อัตโนมัติ)
+          localStorage.removeItem(SESSION_KEY);
+        }
+      } catch (e) {
+        console.error("Error parsing session", e);
+      }
+    }
   }, []);
+
+  // --- เพิ่มใหม่ทั้งหมด: ระบบต่ออายุเซสชั่นอัตโนมัติ เมื่อมีการคลิกหรือพิมพ์ ---
+  useEffect(() => {
+    const handleActivity = () => {
+      if (currentUser) { // ทำงานเฉพาะตอนล็อกอินอยู่
+        const sessionStr = localStorage.getItem(SESSION_KEY);
+        if (sessionStr) {
+          const session = JSON.parse(sessionStr);
+          // อัปเดตเซสชั่นลง Storage เฉพาะเมื่อเวลาผ่านไป 1 นาที (ลดภาระคอมพิวเตอร์ไม่ต้องเซฟรัวๆ ทุกครั้งที่ขยับเมาส์)
+          if (Date.now() - session.lastActive > 60000) {
+            session.lastActive = Date.now();
+            localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+          }
+        }
+      }
+    };
+    // ดักจับเมื่อผู้ใช้คลิกเมาส์ หรือกดปุ่มบนคีย์บอร์ด
+    window.addEventListener('click', handleActivity);
+    window.addEventListener('keydown', handleActivity);
+    
+    return () => {
+      // ล้างตัวดักจับออกเมื่อปิดหน้าเว็บ
+      window.removeEventListener('click', handleActivity);
+      window.removeEventListener('keydown', handleActivity);
+    };
+  }, [currentUser]);
 
   const fetchTransactions = async () => {
     const { data, error } = await supabase
@@ -145,13 +203,23 @@ export default function App() {
 
   const handleLogin = (e) => {
     e.preventDefault();
-    let user = users[username];
+    let user = users[username]; // ตรวจสอบว่าเป็นแอดมินจำลองไหม
+    
     if (!user) {
       const student = students.find(s => s.id === username);
-      if (student) user = { password: 'password', role: 'student', name: student.name };
+      if (student) {
+        // --- แก้ไข: ใช้รหัสผ่านจาก DB (ถ้าใน DB เป็นค่าว่าง จะให้ใช้คำว่า 'password' แทน) ---
+        user = { password: student.password || 'password', role: 'student', name: student.name };
+      }
     }
+
     if (user && user.password === password) {
-      setCurrentUser({ username, ...user });
+      const sessionUser = { username, ...user };
+      setCurrentUser(sessionUser);
+      
+      // --- เพิ่มใหม่: บันทึกลง Local Storage ในคอมพิวเตอร์ผู้ใช้ ---
+      localStorage.setItem(SESSION_KEY, JSON.stringify({ user: sessionUser, lastActive: Date.now() }));
+      
       setCurrentView('overview');
       setLoginError('');
       setUsername(''); setPassword('');
@@ -160,7 +228,80 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => { setCurrentUser(null); setCurrentView('overview'); };
+  const handleLogout = () => { 
+    setCurrentUser(null); 
+    // --- เพิ่มใหม่: ล้างข้อมูลการล็อกอินออกจากเครื่องเมื่อกดล็อกเอาท์ ---
+    localStorage.removeItem(SESSION_KEY); 
+    setCurrentView('overview'); 
+  };
+
+  // ----------------------------------------------------
+  // ระบบเปลี่ยนรหัสผ่าน
+  // ----------------------------------------------------
+  const submitChangePassword = async (e) => {
+    e.preventDefault(); // ป้องกันไม่ให้หน้าเว็บรีเฟรชตอนกด Submit
+    setCpError(''); // เคลียร์ข้อความแจ้งเตือนเก่า
+    setCpSuccess('');
+
+    let isMockAdmin = false;
+    let targetUser = users[cpUsername]; // หาว่าพิมพ์ชื่อแอดมินมาหรือเปล่า
+
+    // ค้นหาว่าผู้ใช้ที่ต้องการเปลี่ยนรหัสคือใคร
+    if (targetUser) {
+      isMockAdmin = true;
+    } else {
+      const student = students.find(s => s.id === cpUsername);
+      if (student) {
+        // เอารหัสเดิมจากฐานข้อมูลมาเตรียมไว้ตรวจสอบ
+        targetUser = { password: student.password || 'password', id: student.id };
+      }
+    }
+
+    // --- ตรวจสอบเงื่อนไขต่างๆ (Validation) ---
+    if (!targetUser) {
+      setCpError('ไม่พบชื่อผู้ใช้งาน หรือรหัสนักศึกษานี้ในระบบ');
+      return;
+    }
+
+    // ยืนยันรหัสผ่านเดิม (เอาที่พิมพ์มา เทียบกับที่อยู่ในฐานข้อมูล)
+    if (targetUser.password !== cpOldPassword) {
+      setCpError('รหัสผ่านเดิมไม่ถูกต้อง');
+      return;
+    }
+
+    if (isMockAdmin) {
+      setCpError('ไม่สามารถเปลี่ยนรหัสผ่านของบัญชีทดสอบ/แอดมินระบบจำลองได้');
+      return;
+    }
+
+    if (cpNewPassword.length < 6) {
+      setCpError('รหัสผ่านใหม่ต้องมีความยาวอย่างน้อย 6 ตัวอักษร');
+      return;
+    }
+
+    // --- อัปเดตรหัสผ่านใหม่ลงฐานข้อมูล Supabase ---
+    const { error } = await supabase
+      .from('students') // ไปที่ตาราง students
+      .update({ password: cpNewPassword }) // แก้ไขคอลัมน์ password ให้เป็นรหัสใหม่
+      .eq('id', targetUser.id); // เฉพาะของนักศึกษาคนนี้เท่านั้น
+
+    if (error) {
+      setCpError('เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่');
+    } else {
+      // ถ้าสำเร็จ
+      setCpSuccess('เปลี่ยนรหัสผ่านสำเร็จ! ท่านสามารถใช้รหัสผ่านใหม่ในการเข้าสู่ระบบครั้งต่อไป');
+      
+      // อัปเดตข้อมูล State (Array students) ในระบบทันที โดยไม่ต้องรีเฟรชเว็บ
+      setStudents(students.map(s => s.id === targetUser.id ? { ...s, password: cpNewPassword } : s));
+      
+      // ตั้งเวลาหน่วง 3 วินาที เพื่อให้ผู้ใช้อ่านข้อความสำเร็จ ก่อนจะปิดหน้าต่าง
+      setTimeout(() => {
+        setCpModalOpen(false);
+        setCpUsername(''); setCpOldPassword(''); setCpNewPassword('');
+        setCpSuccess('');
+      }, 3000);
+    }
+  };
 
   const openRecordModal = (student) => {
     setRecordTarget(student);
@@ -831,6 +972,14 @@ export default function App() {
                    <label className="block text-sm font-medium text-gray-700 mb-1">รหัสผ่าน (Password)</label>
                    <input type="password" value={password} onChange={(e)=>setPassword(e.target.value)} placeholder="••••••••" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none transition" required/>
                  </div>
+                 
+                 {/* --- เพิ่มใหม่: ลิงก์กดสำหรับเปลี่ยนรหัสผ่าน --- */}
+                 <div className="flex justify-end items-center mt-2">
+                   <button type="button" onClick={() => setCpModalOpen(true)} className="text-sm text-indigo-600 hover:text-indigo-800 font-bold transition-colors">
+                     เปลี่ยนรหัสผ่าน?
+                   </button>
+                 </div>
+
                  <button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-all shadow-sm">เข้าสู่ระบบ</button>
                </form>
 
@@ -850,6 +999,49 @@ export default function App() {
            </div>
         )}
 
+        {/* Modal เปลี่ยนรหัสผ่าน */}
+        {cpModalOpen && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl p-6 w-full max-w-sm animate-in zoom-in-95 duration-200 shadow-xl flex flex-col">
+              
+              {/* ส่วนหัว */}
+              <div className="flex justify-between items-start mb-5">
+                <div className="flex items-center gap-2">
+                  <KeyRound className="w-5 h-5 text-indigo-600" />
+                  <h3 className="text-lg font-bold text-gray-900">เปลี่ยนรหัสผ่าน</h3>
+                </div>
+                {/* ปุ่มปิด (X) */}
+                <button onClick={() => setCpModalOpen(false)} className="text-gray-400 hover:text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-full p-1 transition"><X className="w-5 h-5" /></button>
+              </div>
+              
+              {/* แสดงข้อความแจ้งเตือน Error / Success */}
+              {cpError && <p className="bg-red-50 text-red-600 p-3 rounded-lg text-sm text-center border border-red-100 mb-4 font-medium">{cpError}</p>}
+              {cpSuccess && <p className="bg-green-50 text-green-600 p-3 rounded-lg text-sm text-center border border-green-100 mb-4 font-medium flex items-center gap-2 justify-center"><CheckCircle2 className="w-4 h-4"/> {cpSuccess}</p>}
+
+              {/* ฟอร์มกรอกข้อมูล */}
+              <form onSubmit={submitChangePassword} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">รหัสนักศึกษา (Username)</label>
+                  <input type="text" value={cpUsername} onChange={(e) => setCpUsername(e.target.value)} required placeholder="เช่น 65001" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none transition" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">รหัสผ่านเดิม</label>
+                  <input type="password" value={cpOldPassword} onChange={(e) => setCpOldPassword(e.target.value)} required placeholder="รหัสผ่านปัจจุบัน" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none transition" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">รหัสผ่านใหม่ (6 ตัวอักษรขึ้นไป)</label>
+                  <input type="password" value={cpNewPassword} onChange={(e) => setCpNewPassword(e.target.value)} required placeholder="รหัสผ่านใหม่" minLength="6" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none transition" />
+                </div>
+                
+                {/* ปุ่มกดยืนยัน (ถ้าสำเร็จแล้ว ปุ่มจะกลายเป็นสีเทาและกดไม่ได้) */}
+                <button type="submit" disabled={!!cpSuccess} className={`w-full text-white font-bold py-3 rounded-xl flex justify-center items-center gap-2 shadow-sm transition-colors ${cpSuccess ? 'bg-gray-400' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
+                  ยืนยันการเปลี่ยนรหัสผ่าน
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
+        
         {/* --- MODALS --- */}
         
         {/* Payment Modal (QR Code & Processing) */}
