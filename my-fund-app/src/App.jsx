@@ -7,27 +7,11 @@ import {
   BookOpen, QrCode, Loader2, Upload, AlertCircle, KeyRound, Table, LayoutList
 } from 'lucide-react';
 
-// เรียกใช้ไฟล์ supabaseClient ของจริงที่คุณเชื่อมต่อไว้แล้ว (เอาเครื่องหมาย // ออกเมื่อรันในคอมพิวเตอร์ของคุณ)
+// เรียกใช้ไฟล์ supabaseClient ของจริงที่คุณเชื่อมต่อไว้แล้ว
 // import { supabase } from './supabaseClient';
 
 // --- จำลอง (Mock) การทำงานของ Supabase เพื่อไม่ให้หน้าพรีวิวในเว็บนี้ Error ---
 const supabase = {
-  from: () => ({
-    select: () => ({
-      order: () => Promise.resolve({ data: [], error: null })
-    }),
-    insert: (items) => ({
-      select: () => Promise.resolve({ data: items, error: null })
-    }),
-    update: () => ({
-      eq: () => Promise.resolve({ error: null })
-    })
-  })
-};
-// -------------------------------------------------------------------------
-
-const users = {
-  'admin_room': { password: 'password', role: 'admin_room', name: 'ผู้ดูแลเงินห้อง' },
   'admin_trip': { password: 'password', role: 'admin_trip', name: 'ผู้ดูแลฟิวทริป' }
 };
 
@@ -284,7 +268,7 @@ export default function App() {
       setCpError('เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่');
     } else {
       setCpSuccess('เปลี่ยนรหัสผ่านสำเร็จ! ท่านสามารถใช้รหัสผ่านใหม่ในการเข้าสู่ระบบครั้งต่อไป');
-      setStudents(students.map(s => s.id === targetUser.id ? { ...s, password: cpNewPassword } : s));
+      setStudents(students.map(s => String(s?.id).trim() === String(targetUser.id).trim() ? { ...s, password: cpNewPassword } : s));
       setTimeout(() => {
         setCpModalOpen(false);
         setCpUsername(''); setCpOldPassword(''); setCpNewPassword('');
@@ -558,19 +542,17 @@ export default function App() {
 
   const filteredStudents = (students || []).filter(s => (s?.name || '').includes(studentSearchQuery) || String(s?.id || '').includes(studentSearchQuery));
 
-  // --- ✅ เพิ่มใหม่: ลอจิกคำนวณตาราง 18 สัปดาห์ (วางในตำแหน่งที่ถูกต้อง) ---
+  // --- ✅ แก้ไขลอจิกคำนวณตาราง 18 สัปดาห์ (บังคับหาความถูกต้อง 100%) ---
   const studentsWithSummary = filteredStudents.map(student => {
     
     // 1. คำนวณยอดที่จ่ายไปแล้วทั้งหมดของนักศึกษาคนนี้
     let totalPaid = 0;
     (currentFundTransactions || []).forEach(tx => {
       // ✅ ใช้ String().trim() ทั้งสองฝั่ง ป้องกันช่องว่างแฝงจากฐานข้อมูล
-      if (
-        tx?.type === 'student_payment' &&
-        tx?.status !== 'pending' &&
-        String(tx?.studentId).trim() === String(student?.id).trim()
-      ) {
-        totalPaid += parseFloat(tx?.amount) || 0; // ✅ สะสมยอดเงิน (บังคับเป็นตัวเลข)
+      const isMatch = String(tx?.studentId).trim() === String(student?.id).trim();
+      
+      if (tx?.type === 'student_payment' && tx?.status !== 'pending' && isMatch) {
+        totalPaid += Number(tx?.amount) || 0; // ✅ สะสมยอดเงิน (บังคับเป็นตัวเลข)
       }
     });
       
@@ -579,7 +561,7 @@ export default function App() {
 
     // 2. กระจายยอดเงินลงกล่อง 18 สัปดาห์
     const weeks = [];
-    const ratePerWeek = parseFloat(rules?.rate) || 10;
+    const ratePerWeek = Number(rules?.rate) || 10;
     let remaining = totalPaid; // เริ่มต้นด้วยยอดเงินทั้งหมดที่โอนมา
     
     for (let i = 1; i <= 18; i++) {
@@ -590,11 +572,11 @@ export default function App() {
         weeks.push(remaining); // ✅ ถ้าเป็นเศษ ก็ใส่เศษที่เหลือลงในสัปดาห์นั้น
         remaining = 0;
       } else {
-        weeks.push(''); // ✅ ถ้าเงินหมดแล้ว ให้ใส่ค่าว่าง ('') เพื่อให้ตารางรู้ว่ายังไม่จ่าย
+        // ✅ ถ้าเงินหมด/ยังไม่จ่าย ให้ยัดเลข 0 ลงไป เพื่อให้ตารางวาดขีดได้ง่ายๆ
+        weeks.push(0); 
       }
     }
 
-    // ✅ คืนค่าข้อมูลนักศึกษา พร้อมกับ Array ยอดเงิน 18 ช่อง (weeks) กลับไปให้ตารางวาด
     return { ...student, totalPaid, targetAmount, remainingAmount, weeks };
   });
 
@@ -871,12 +853,13 @@ export default function App() {
                             <td className="px-4 py-2 font-mono text-gray-800 border border-gray-300 bg-white">{s?.id}</td>
                             <td className="px-4 py-2 font-medium text-gray-800 border border-gray-300 sticky left-0 bg-white z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">{s?.name}</td>
                             
+                            {/* ✅ ดึงตัวเลขมาวาด ถ้ายอด > 0 แสดงสีเขียว ถ้าเป็น 0 แสดงขีด */}
                             {s?.weeks?.map((val, i) => (
                               <td key={`week-${s?.id}-${i}`} className="px-2 py-2 text-center border border-gray-300 bg-white">
-                                {val !== '' ? (
-                                  <span className="font-semibold text-emerald-600">{val}</span>
+                                {val > 0 ? (
+                                  <span className="font-bold text-emerald-600">{val}</span>
                                 ) : (
-                                  <span className="text-gray-300">-</span>
+                                  <span className="text-gray-400 font-medium">-</span>
                                 )}
                               </td>
                             ))}
