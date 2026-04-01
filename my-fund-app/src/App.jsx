@@ -840,7 +840,7 @@ export default function App() {
                         <tr>
                           <th className="px-4 py-2 font-bold border border-gray-300 text-center w-16 bg-blue-100 text-blue-900">ลำดับ</th>
                           <th className="px-4 py-2 font-bold border border-gray-300 w-28 bg-blue-100 text-blue-900">รหัสนักศึกษา</th>
-                          <th className="px-4 py-2 font-bold border border-gray-300 w-48 sticky left-0 z-10 bg-blue-100 text-blue-900 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">ชื่อ - นามสกุล</th>
+                          <th className="px-4 py-3 font-bold border border-gray-300 bg-blue-50 text-blue-900">ชื่อ - นามสกุล</th>
                           {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18].map((weekNum) => (
                             <th key={weekNum} className="px-2 py-2 font-bold border border-gray-300 text-center min-w-[70px] bg-purple-100 text-purple-900">Week {weekNum}</th>
                           ))}
@@ -851,7 +851,7 @@ export default function App() {
                           <tr key={s?.id || idx} className="hover:bg-gray-50 transition-colors">
                             <td className="px-4 py-2 text-center text-gray-800 border border-gray-300 bg-white">{idx + 1}</td>
                             <td className="px-4 py-2 font-mono text-gray-800 border border-gray-300 bg-white">{s?.id}</td>
-                            <td className="px-4 py-2 font-medium text-gray-800 border border-gray-300 sticky left-0 bg-white z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">{s?.name}</td>
+                            <td className="px-4 py-3 font-medium text-gray-800 border border-gray-300 bg-white">{s?.name}</td>
                             
                             {/* ✅ ดึงตัวเลขมาวาด ถ้ายอด > 0 แสดงสีเขียว ถ้าเป็น 0 แสดงขีด */}
                             {s?.weeks?.map((val, i) => (
