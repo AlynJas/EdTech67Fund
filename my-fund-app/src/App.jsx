@@ -880,7 +880,7 @@ export default function App() {
                   <div className="px-6 py-4 flex justify-between items-center bg-white border-b border-gray-300">
                     <h3 className={`font-bold text-lg flex items-center gap-2 ${currentTheme.text}`}>
                       <Table className="w-5 h-5" /> 
-                      {/* แก้ชื่อตารางให้เหมือนในภาพเป๊ะๆ */}
+                      {/* แก้ชื่อตาราง */}
                       เงินเก็บรับน้อง {activeTab === 'room' ? 'ED-TECH' : 'ฟิวทริป'} เทอม {formatTermName(selectedTerm).replace('ปี ', '').replace(' เทอม ', ' / ')}
                     </h3>
                     <div className="relative w-64">
@@ -894,12 +894,12 @@ export default function App() {
                     <table className="w-full text-sm text-left border-collapse min-w-max border border-gray-300">
                       <thead>
                         <tr>
-                          {/* หัวตาราง 3 คอลัมน์แรก พื้นหลังสีฟ้าอ่อนเหมือนรูปภาพ */}
+                          {/* หัวตาราง 3 คอลัมน์แรก พื้นหลังสีฟ้าอ่อน */}
                           <th className="px-4 py-2 font-bold border border-gray-300 text-center w-16 bg-blue-100 text-blue-900">ลำดับ</th>
                           <th className="px-4 py-2 font-bold border border-gray-300 w-28 bg-blue-100 text-blue-900">รหัสนักศึกษา</th>
                           <th className="px-4 py-2 font-bold border border-gray-300 w-48 sticky left-0 z-10 bg-blue-100 text-blue-900 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">ชื่อ - นามสกุล</th>
                           
-                          {/* หัวตาราง Week 1-18 พื้นหลังสีม่วงอ่อนเหมือนรูปภาพ */}
+                          {/* หัวตาราง Week 1-18 พื้นหลังสีม่วงอ่อน */}
                           {Array.from({ length: 18 }).map((_, i) => (
                             <th key={i} className="px-2 py-2 font-bold border border-gray-300 text-center min-w-[70px] bg-purple-100 text-purple-900">Week {i + 1}</th>
                           ))}
