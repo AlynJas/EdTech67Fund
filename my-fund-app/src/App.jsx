@@ -7,11 +7,21 @@ import {
   BookOpen, QrCode, Loader2, Upload, AlertCircle, KeyRound, Table, LayoutList
 } from 'lucide-react';
 
-// เรียกใช้ไฟล์ supabaseClient ของจริงที่คุณเชื่อมต่อไว้แล้ว
+// เรียกใช้ไฟล์ supabaseClient ของจริงที่คุณเชื่อมต่อไว้แล้ว (สำหรับรันในคอมพิวเตอร์ของคุณ ให้เอา // ด้านหน้าออกครับ)
 // import { supabase } from './supabaseClient';
 
-// --- จำลอง (Mock) การทำงานของ Supabase เพื่อไม่ให้หน้าพรีวิวในเว็บนี้ Error ---
+// --- จำลอง (Mock) การทำงานของ Supabase เพื่อให้หน้าเว็บพรีวิวฝั่งขวาทำงานได้ ---
 const supabase = {
+  from: () => ({
+    select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }),
+    insert: (items) => ({ select: () => Promise.resolve({ data: items, error: null }) }),
+    update: () => ({ eq: () => Promise.resolve({ error: null }) })
+  })
+};
+
+// --- กู้คืนข้อมูลบัญชีแอดมิน ---
+const users = {
+  'admin_room': { password: 'password', role: 'admin_room', name: 'ผู้ดูแลเงินห้อง' },
   'admin_trip': { password: 'password', role: 'admin_trip', name: 'ผู้ดูแลฟิวทริป' }
 };
 
@@ -542,37 +552,32 @@ export default function App() {
 
   const filteredStudents = (students || []).filter(s => (s?.name || '').includes(studentSearchQuery) || String(s?.id || '').includes(studentSearchQuery));
 
-  // --- ✅ แก้ไขลอจิกคำนวณตาราง 18 สัปดาห์ (บังคับหาความถูกต้อง 100%) ---
+  // --- ลอจิกคำนวณตาราง 18 สัปดาห์ ---
   const studentsWithSummary = filteredStudents.map(student => {
     
-    // 1. คำนวณยอดที่จ่ายไปแล้วทั้งหมดของนักศึกษาคนนี้
     let totalPaid = 0;
     (currentFundTransactions || []).forEach(tx => {
-      // ✅ ใช้ String().trim() ทั้งสองฝั่ง ป้องกันช่องว่างแฝงจากฐานข้อมูล
       const isMatch = String(tx?.studentId).trim() === String(student?.id).trim();
-      
       if (tx?.type === 'student_payment' && tx?.status !== 'pending' && isMatch) {
-        totalPaid += Number(tx?.amount) || 0; // ✅ สะสมยอดเงิน (บังคับเป็นตัวเลข)
+        totalPaid += Number(tx?.amount) || 0; 
       }
     });
       
     const targetAmount = activeTab === 'room' ? STUDENT_TARGET_ROOM : STUDENT_TARGET_TRIP;
     const remainingAmount = Math.max(0, targetAmount - totalPaid);
 
-    // 2. กระจายยอดเงินลงกล่อง 18 สัปดาห์
     const weeks = [];
     const ratePerWeek = Number(rules?.rate) || 10;
-    let remaining = totalPaid; // เริ่มต้นด้วยยอดเงินทั้งหมดที่โอนมา
+    let remaining = totalPaid; 
     
     for (let i = 1; i <= 18; i++) {
       if (remaining >= ratePerWeek) {
-        weeks.push(ratePerWeek); // ✅ ถ้าเงินเหลือพอจ่ายเต็มสัปดาห์ ก็ใส่เต็ม
+        weeks.push(ratePerWeek);
         remaining -= ratePerWeek;
       } else if (remaining > 0) {
-        weeks.push(remaining); // ✅ ถ้าเป็นเศษ ก็ใส่เศษที่เหลือลงในสัปดาห์นั้น
+        weeks.push(remaining);
         remaining = 0;
       } else {
-        // ✅ ถ้าเงินหมด/ยังไม่จ่าย ให้ยัดเลข 0 ลงไป เพื่อให้ตารางวาดขีดได้ง่ายๆ
         weeks.push(0); 
       }
     }
@@ -820,7 +825,8 @@ export default function App() {
             {/* --- แสดงมุมมองตาราง (TABLE VIEW) --- */}
             {showTableView ? (
               <div className="space-y-8 animate-in fade-in duration-300">
-                {/* 1. ตารางเงินเก็บ 18 สัปดาห์ (แต่งให้เหมือน Excel) */}
+                
+                {/* 1. ตารางเงินเก็บ 18 สัปดาห์ (แต่งให้เหมือน Excel และลบเอฟเฟกต์แช่แข็งออก) */}
                 <div className="bg-white shadow-sm overflow-hidden">
                   <div className="px-6 py-4 flex justify-between items-center bg-white border-b border-gray-300">
                     <h3 className={`font-bold text-lg flex items-center gap-2 ${currentTheme.text}`}>
@@ -835,27 +841,31 @@ export default function App() {
                   
                   {/* ตารางแนวนอน 18 วีค ขอบแบบ Excel */}
                   <div className="overflow-x-auto pb-4">
-                    <table className="min-w-full text-sm text-left border-collapse border border-gray-300 whitespace-nowrap">
-                      <thead>
+                    <table className="w-full text-sm text-left border-collapse border border-gray-300 whitespace-nowrap">
+                      <thead className="bg-blue-50 text-blue-900">
                         <tr>
-                          <th className="px-4 py-2 font-bold border border-gray-300 text-center w-16 bg-blue-100 text-blue-900">ลำดับ</th>
-                          <th className="px-4 py-2 font-bold border border-gray-300 w-28 bg-blue-100 text-blue-900">รหัสนักศึกษา</th>
-                          <th className="px-4 py-3 font-bold border border-gray-300 bg-blue-50 text-blue-900">ชื่อ - นามสกุล</th>
+                          {/* ✅ แก้ไข: ลบ class sticky ทั้งหมดทิ้ง และปรับสีพื้นหลังให้กลมกลืน */}
+                          <th className="px-4 py-3 font-bold border border-gray-300 text-center w-16">ลำดับ</th>
+                          <th className="px-4 py-3 font-bold border border-gray-300 text-center w-28">รหัสนักศึกษา</th>
+                          <th className="px-4 py-3 font-bold border border-gray-300 text-center w-48">ชื่อ - นามสกุล</th>
+                          
+                          {/* หัวตาราง Week 1-18 */}
                           {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18].map((weekNum) => (
-                            <th key={weekNum} className="px-2 py-2 font-bold border border-gray-300 text-center min-w-[70px] bg-purple-100 text-purple-900">Week {weekNum}</th>
+                            <th key={weekNum} className="px-2 py-3 font-bold border border-gray-300 text-center w-16 bg-purple-50 text-purple-900">W{weekNum}</th>
                           ))}
                         </tr>
                       </thead>
-                      <tbody>
+                      <tbody className="bg-white">
                         {studentsWithSummary?.map((s, idx) => (
                           <tr key={s?.id || idx} className="hover:bg-gray-50 transition-colors">
-                            <td className="px-4 py-2 text-center text-gray-800 border border-gray-300 bg-white">{idx + 1}</td>
-                            <td className="px-4 py-2 font-mono text-gray-800 border border-gray-300 bg-white">{s?.id}</td>
-                            <td className="px-4 py-3 font-medium text-gray-800 border border-gray-300 bg-white">{s?.name}</td>
+                            {/* ข้อมูล 3 คอลัมน์แรก */}
+                            <td className="px-4 py-3 text-center border border-gray-300 text-gray-800">{idx + 1}</td>
+                            <td className="px-4 py-3 font-mono text-center border border-gray-300 text-gray-800">{s?.id}</td>
+                            <td className="px-4 py-3 font-medium border border-gray-300 text-gray-800">{s?.name}</td>
                             
-                            {/* ✅ ดึงตัวเลขมาวาด ถ้ายอด > 0 แสดงสีเขียว ถ้าเป็น 0 แสดงขีด */}
+                            {/* ข้อมูลยอดเงินรายสัปดาห์ */}
                             {s?.weeks?.map((val, i) => (
-                              <td key={`week-${s?.id}-${i}`} className="px-2 py-2 text-center border border-gray-300 bg-white">
+                              <td key={`week-${s?.id}-${i}`} className="px-2 py-3 text-center border border-gray-300">
                                 {val > 0 ? (
                                   <span className="font-bold text-emerald-600">{val}</span>
                                 ) : (
@@ -866,9 +876,9 @@ export default function App() {
                           </tr>
                         ))}
                         {/* แถวสรุปยอดรวมด้านล่างสุด */}
-                        <tr className="bg-gray-100 font-bold">
-                          <td colSpan="3" className="px-4 py-3 text-right border border-gray-300 bg-emerald-100 text-emerald-900">รวมรับทั้งหมด:</td>
-                          <td colSpan="18" className={`px-4 py-3 text-left border border-gray-300 bg-emerald-50 text-emerald-800`}>฿{totalActiveFund.toLocaleString()}</td>
+                        <tr className="bg-emerald-50">
+                          <td colSpan="3" className="px-4 py-3 text-right font-bold border border-gray-300 text-emerald-900">รวมรับทั้งหมด:</td>
+                          <td colSpan="18" className="px-4 py-3 text-left font-bold border border-gray-300 text-emerald-800">฿{totalActiveFund.toLocaleString()}</td>
                         </tr>
                       </tbody>
                     </table>
@@ -893,10 +903,9 @@ export default function App() {
                   </div>
                   
                   <div className="overflow-x-auto pb-4">
-                    <table className="w-full text-sm text-left border-collapse border border-gray-300">
+                    <table className="w-full text-sm text-left border-collapse border border-gray-300 whitespace-nowrap">
                       <thead className="bg-purple-100 text-purple-900">
                         <tr>
-                          {/* แก้ไขชื่อคอลัมน์ให้ตรงกับรูปภาพเป๊ะๆ และใส่เส้นขอบทึบ */}
                           <th className="px-4 py-2 font-bold border border-gray-300 w-32 text-center">วัน/เดือน/ปี</th>
                           <th className="px-4 py-2 font-bold border border-gray-300 text-center">รายการ</th>
                           <th className="px-4 py-2 font-bold border border-gray-300 text-center w-32">จำนวน (บาท)</th>
