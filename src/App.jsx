@@ -7,13 +7,10 @@ import {
   BookOpen, QrCode, Loader2, Upload, AlertCircle, KeyRound, Table, LayoutList
 } from 'lucide-react';
 
-// เรียกใช้ไฟล์ supabaseClient ของจริงที่คุณเชื่อมต่อไว้แล้ว (สำหรับรันในคอมพิวเตอร์ของคุณ ให้เอา // ด้านหน้าออกครับ)
-// import { supabase } from './supabaseClient';
-
 // นำเข้า (Import) การเชื่อมต่อ Supabase ของจริงเพื่อใช้งานทันที
 import { supabase } from './supabaseClient';
 
-// --- กู้คืนข้อมูลบัญชีแอดมิน ---
+// --- ข้อมูลบัญชีแอดมิน ---
 const users = {
   'admin_room': { password: 'password', role: 'admin_room', name: 'ผู้ดูแลเงินห้อง' },
   'admin_trip': { password: 'password', role: 'admin_trip', name: 'ผู้ดูแลฟิวทริป' }
@@ -100,14 +97,23 @@ export default function App() {
   const [studentSearchQuery, setStudentSearchQuery] = useState(''); 
   const [successMsg, setSuccessMsg] = useState('');
 
-  // --- เพิ่ม State ควบคุมมุมมองตาราง ---
-  const [showTableView, setShowTableView] = useState(false);
+  // --- ✅ 2. ดึงสถานะการเปิดตาราง Excel จาก localStorage ---
+  const [showTableView, setShowTableView] = useState(() => localStorage.getItem('cs2_showTableView') === 'true');
 
   const paymentTimeoutRef = useRef(null);
   const qrTimerRef = useRef(null);
 
   const isAnyModalOpen = recordModalOpen || editModalOpen || otherRecordModalOpen || slipModalOpen || notifyModalOpen || historyModalOpen || cpModalOpen;
   
+  // --- ✅ 3. บันทึกสถานะ UI ลง localStorage ทุกครั้งที่มีการกดเปลี่ยนหน้า/แท็บ ---
+  useEffect(() => {
+    localStorage.setItem('cs2_currentView', currentView);
+    localStorage.setItem('cs2_activeTab', activeTab);
+    localStorage.setItem('cs2_selectedTerm', selectedTerm);
+    localStorage.setItem('cs2_showTableView', showTableView);
+  }, [currentView, activeTab, selectedTerm, showTableView]);
+  // ------------------------------------------------------------------------
+
   useEffect(() => {
     fetchTransactions();
     fetchStudents();
@@ -819,8 +825,7 @@ export default function App() {
             {/* --- แสดงมุมมองตาราง (TABLE VIEW) --- */}
             {showTableView ? (
               <div className="space-y-8 animate-in fade-in duration-300">
-                
-                {/* 1. ตารางเงินเก็บ 18 สัปดาห์ (แต่งให้เหมือน Excel และลบเอฟเฟกต์แช่แข็งออก) */}
+                {/* 1. ตารางเงินเก็บ 18 สัปดาห์ (แต่งให้เหมือน Excel) */}
                 <div className="bg-white shadow-sm overflow-hidden">
                   <div className="px-6 py-4 flex justify-between items-center bg-white border-b border-gray-300">
                     <h3 className={`font-bold text-lg flex items-center gap-2 ${currentTheme.text}`}>
@@ -838,14 +843,13 @@ export default function App() {
                     <table className="w-full text-sm text-left border-collapse border border-gray-300 whitespace-nowrap">
                       <thead className="bg-blue-50 text-blue-900">
                         <tr>
-                          {/* ✅ แก้ไข: ลบ class sticky ทั้งหมดทิ้ง และปรับสีพื้นหลังให้กลมกลืน */}
                           <th className="px-4 py-3 font-bold border border-gray-300 text-center w-16">ลำดับ</th>
                           <th className="px-4 py-3 font-bold border border-gray-300 text-center w-28">รหัสนักศึกษา</th>
                           <th className="px-4 py-3 font-bold border border-gray-300 text-center w-48">ชื่อ - นามสกุล</th>
                           
                           {/* หัวตาราง Week 1-18 */}
                           {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18].map((weekNum) => (
-                            <th key={weekNum} className="px-2 py-3 font-bold border border-gray-300 text-center w-16 bg-purple-50 text-purple-900">Week {weekNum}</th>
+                            <th key={weekNum} className="px-2 py-3 font-bold border border-gray-300 text-center w-16 bg-purple-50 text-purple-900">W{weekNum}</th>
                           ))}
                         </tr>
                       </thead>
@@ -857,7 +861,7 @@ export default function App() {
                             <td className="px-4 py-3 font-mono text-center border border-gray-300 text-gray-800">{s?.id}</td>
                             <td className="px-4 py-3 font-medium border border-gray-300 text-gray-800">{s?.name}</td>
                             
-                            {/* ✅ แก้ไข: บังคับวาดช่องตาราง 18 คอลัมน์เสมอ เพื่อป้องกันตารางแหว่งหรือเส้นขอบหาย! */}
+                            {/* บังคับวาดช่องตาราง 18 คอลัมน์เสมอ */}
                             {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17].map((i) => {
                               const val = s?.weeks?.[i];
                               return (
@@ -903,6 +907,7 @@ export default function App() {
                     <table className="w-full text-sm text-left border-collapse border border-gray-300 whitespace-nowrap">
                       <thead className="bg-purple-100 text-purple-900">
                         <tr>
+                          {/* แก้ไขชื่อคอลัมน์ให้ตรงกับรูปภาพเป๊ะๆ และใส่เส้นขอบทึบ */}
                           <th className="px-4 py-2 font-bold border border-gray-300 w-32 text-center">วัน/เดือน/ปี</th>
                           <th className="px-4 py-2 font-bold border border-gray-300 text-center">รายการ</th>
                           <th className="px-4 py-2 font-bold border border-gray-300 text-center w-32">จำนวน (บาท)</th>
