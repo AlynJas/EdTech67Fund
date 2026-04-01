@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/slipok-api/:path*",
+      "destination": "https://api.slipok.com/api/line/apikey/:path*"
+    }
+  ]
+}
