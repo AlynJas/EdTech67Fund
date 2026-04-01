@@ -845,7 +845,7 @@ export default function App() {
                           
                           {/* หัวตาราง Week 1-18 */}
                           {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18].map((weekNum) => (
-                            <th key={weekNum} className="px-2 py-3 font-bold border border-gray-300 text-center w-16 bg-purple-50 text-purple-900">W{weekNum}</th>
+                            <th key={weekNum} className="px-2 py-3 font-bold border border-gray-300 text-center w-16 bg-purple-50 text-purple-900">Week {weekNum}</th>
                           ))}
                         </tr>
                       </thead>
