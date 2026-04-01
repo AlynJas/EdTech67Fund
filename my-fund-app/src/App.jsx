@@ -659,9 +659,42 @@ export default function App() {
 
   const filteredStudents = (students || []).filter(s => (s?.name || '').includes(studentSearchQuery) || (s?.id || '').includes(studentSearchQuery));
   const studentsWithSummary = filteredStudents.map(student => {
-    const totalPaid = currentFundTransactions
-      .filter(tx => tx.studentId === student.id && tx.type === 'student_payment' && tx.status !== 'pending')
-      .reduce((sum, tx) => sum + tx.amount, 0);
+    const studentsWithSummary = filteredStudents.map(student => {
+    // 1. คำนวณยอดที่จ่ายไปแล้วทั้งหมดของนักศึกษาคนนี้ (รับประกันว่าเป็นตัวเลข 100%)
+    let totalPaid = 0;
+    (currentFundTransactions || []).forEach(tx => {
+      if (
+        tx?.type === 'student_payment' &&
+        tx?.status !== 'pending' &&
+        String(tx?.studentId).trim() === String(student?.id).trim()
+      ) {
+        totalPaid += parseFloat(tx?.amount) || 0;
+      }
+    });
+      
+    const targetAmount = activeTab === 'room' ? STUDENT_TARGET_ROOM : STUDENT_TARGET_TRIP;
+    const remainingAmount = Math.max(0, targetAmount - totalPaid);
+
+    // 2. กระจายยอดเงินลง 18 สัปดาห์อย่างรัดกุม
+    const weeks = [];
+    const ratePerWeek = parseFloat(rules?.rate) || 10;
+    let remaining = totalPaid; // เอาตัวเลขทั้งหมดมาตั้งต้น
+    
+    for (let i = 1; i <= 18; i++) {
+      if (remaining >= ratePerWeek) {
+        weeks.push(ratePerWeek); // จ่ายเต็มวีค
+        remaining -= ratePerWeek;
+      } else if (remaining > 0) {
+        weeks.push(remaining); // ใส่เศษเงินที่เหลือในวีคสุดท้าย
+        remaining = 0;
+      } else {
+        weeks.push(''); // ใส่ค่าว่าง (แทนที่ยังไม่จ่าย)
+      }
+    }
+
+    return { ...student, totalPaid, targetAmount, remainingAmount, weeks };
+  });
+  
     const targetAmount = activeTab === 'room' ? STUDENT_TARGET_ROOM : STUDENT_TARGET_TRIP;
     const remainingAmount = Math.max(0, targetAmount - totalPaid);
     return { ...student, totalPaid, targetAmount, remainingAmount };
