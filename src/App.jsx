@@ -10,14 +10,8 @@ import {
 // เรียกใช้ไฟล์ supabaseClient ของจริงที่คุณเชื่อมต่อไว้แล้ว (สำหรับรันในคอมพิวเตอร์ของคุณ ให้เอา // ด้านหน้าออกครับ)
 // import { supabase } from './supabaseClient';
 
-// --- จำลอง (Mock) การทำงานของ Supabase เพื่อให้หน้าเว็บพรีวิวฝั่งขวาทำงานได้ ---
-const supabase = {
-  from: () => ({
-    select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }),
-    insert: (items) => ({ select: () => Promise.resolve({ data: items, error: null }) }),
-    update: () => ({ eq: () => Promise.resolve({ error: null }) })
-  })
-};
+// นำเข้า (Import) การเชื่อมต่อ Supabase ของจริงเพื่อใช้งานทันที
+import { supabase } from './supabaseClient';
 
 // --- กู้คืนข้อมูลบัญชีแอดมิน ---
 const users = {
