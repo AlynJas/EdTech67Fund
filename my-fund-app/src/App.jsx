@@ -835,14 +835,14 @@ export default function App() {
                   
                   {/* ตารางแนวนอน 18 วีค ขอบแบบ Excel */}
                   <div className="overflow-x-auto pb-4">
-                    <table className="w-full text-sm text-left border-collapse min-w-max border border-gray-300">
+                    <table className="min-w-full text-sm text-left border-collapse border border-gray-300 whitespace-nowrap">
                       <thead>
                         <tr>
                           <th className="px-4 py-2 font-bold border border-gray-300 text-center w-16 bg-blue-100 text-blue-900">ลำดับ</th>
                           <th className="px-4 py-2 font-bold border border-gray-300 w-28 bg-blue-100 text-blue-900">รหัสนักศึกษา</th>
                           <th className="px-4 py-2 font-bold border border-gray-300 w-48 sticky left-0 z-10 bg-blue-100 text-blue-900 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">ชื่อ - นามสกุล</th>
-                          {[...Array(18)].map((_, i) => (
-                            <th key={i} className="px-2 py-2 font-bold border border-gray-300 text-center min-w-[70px] bg-purple-100 text-purple-900">Week {i + 1}</th>
+                          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18].map((weekNum) => (
+                            <th key={weekNum} className="px-2 py-2 font-bold border border-gray-300 text-center min-w-[70px] bg-purple-100 text-purple-900">Week {weekNum}</th>
                           ))}
                         </tr>
                       </thead>
