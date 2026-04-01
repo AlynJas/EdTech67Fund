@@ -8,7 +8,16 @@ import {
 } from 'lucide-react';
 
 // นำเข้า (Import) การเชื่อมต่อ Supabase ของจริงเพื่อใช้งานทันที
-import { supabase } from './supabaseClient';
+// import { supabase } from './supabaseClient';
+
+// --- จำลอง (Mock) การทำงานของ Supabase เพื่อไม่ให้หน้าพรีวิวในเว็บนี้ Error ---
+const supabase = {
+  from: () => ({
+    select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }),
+    insert: (items) => ({ select: () => Promise.resolve({ data: items, error: null }) }),
+    update: () => ({ eq: () => Promise.resolve({ error: null }) })
+  })
+};
 
 // --- ข้อมูลบัญชีแอดมิน ---
 const users = {
@@ -16,11 +25,6 @@ const users = {
   'admin_trip': { password: 'password', role: 'admin_trip', name: 'ผู้ดูแลฟิวทริป' }
 };
 
-// --- ตั้งเป้าหมาย (Targets) ---
-const TARGET_ROOM = 15000;
-const TARGET_TRIP = 50000;
-const STUDENT_TARGET_ROOM = 500; 
-const STUDENT_TARGET_TRIP = 1500;
 
 const TERMS = [
   '1/1', '1/2',
@@ -35,6 +39,46 @@ const formatTermName = (termValue) => {
   if (term === 'b1') return `ปี ${year} ปิดเทอม 1`;
   if (term === 'b2') return `ปี ${year} ปิดเทอม 2`;
   return `ปี ${year} เทอม ${term}`;
+};
+
+// --- ✅ ระบบคำนวณเป้าหมายรายคน ไดนามิกตามชั้นปีและเทอม ---
+const getTermConfig = (termStr, fundType) => {
+  const [yearStr, term] = termStr.split('/');
+  const year = parseInt(yearStr);
+  const isBreak = term.startsWith('b');
+
+  if (fundType === 'room') {
+    if (isBreak) return { allowed: false, message: 'ไม่มีการเก็บเงินห้องในช่วงปิดเทอม', target: 0, rate: 0, weeks: 0, unit: 'สัปดาห์' };
+    
+    // ปี 1
+    if (year === 1 && term === '1') return { allowed: true, target: 220, rate: 10, weeks: 22, unit: 'สัปดาห์', minAmount: 10, maxAmount: 220 };
+    if (year === 1 && term === '2') return { allowed: true, target: 170, rate: 10, weeks: 17, unit: 'สัปดาห์', minAmount: 10, maxAmount: 170 };
+    
+    // ปี 2 ขึ้นไป
+    return { allowed: true, target: 180, rate: 10, weeks: 18, unit: 'สัปดาห์', minAmount: 10, maxAmount: 180 };
+  }
+
+  if (fundType === 'trip') {
+    // ปี 1
+    if (year === 1 && term === '1') return { allowed: false, message: 'ไม่มีการเก็บเงินฟิวทริปในปี 1 เทอม 1', target: 0, rate: 0, weeks: 0, unit: 'สัปดาห์' };
+    if (year === 1 && term === '2') return { allowed: true, target: 680, rate: 40, weeks: 17, unit: 'สัปดาห์', minAmount: 40, maxAmount: 680 };
+    
+    if (isBreak) {
+      // ตั้งแต่ปี 2 ปิดเทอม 2 เป็นต้นไป
+      if (year > 2 || (year === 2 && term === 'b2')) {
+         return { allowed: true, target: 300, rate: 10, weeks: 30, unit: 'วัน', minAmount: 10, maxAmount: 300 }; // สมมติ 30 วัน
+      }
+      return { allowed: false, message: 'ยังไม่มีการเก็บเงินพิเศษช่วงปิดเทอมนี้', target: 0, rate: 0, weeks: 0, unit: 'วัน' };
+    }
+    
+    // ปี 2 ปกติ
+    if (year === 2) return { allowed: true, target: 720, rate: 40, weeks: 18, unit: 'สัปดาห์', minAmount: 40, maxAmount: 720 };
+    
+    // ปี 3 ขึ้นไป ปกติ
+    if (year >= 3) return { allowed: true, target: 1620, rate: 90, weeks: 18, unit: 'สัปดาห์', minAmount: 90, maxAmount: 1620 };
+  }
+  
+  return { allowed: false, message: 'ไม่อนุญาต', target: 0, rate: 0, weeks: 0, unit: '' };
 };
 
 const SESSION_KEY = 'cs2_fund_session';
@@ -97,7 +141,6 @@ export default function App() {
   const [studentSearchQuery, setStudentSearchQuery] = useState(''); 
   const [successMsg, setSuccessMsg] = useState('');
 
-  // --- ✅ 2. ดึงสถานะการเปิดตาราง Excel จาก localStorage ---
   const [showTableView, setShowTableView] = useState(() => localStorage.getItem('cs2_showTableView') === 'true');
 
   const paymentTimeoutRef = useRef(null);
@@ -105,14 +148,12 @@ export default function App() {
 
   const isAnyModalOpen = recordModalOpen || editModalOpen || otherRecordModalOpen || slipModalOpen || notifyModalOpen || historyModalOpen || cpModalOpen;
   
-  // --- ✅ 3. บันทึกสถานะ UI ลง localStorage ทุกครั้งที่มีการกดเปลี่ยนหน้า/แท็บ ---
   useEffect(() => {
     localStorage.setItem('cs2_currentView', currentView);
     localStorage.setItem('cs2_activeTab', activeTab);
     localStorage.setItem('cs2_selectedTerm', selectedTerm);
     localStorage.setItem('cs2_showTableView', showTableView);
   }, [currentView, activeTab, selectedTerm, showTableView]);
-  // ------------------------------------------------------------------------
 
   useEffect(() => {
     fetchTransactions();
@@ -305,25 +346,8 @@ export default function App() {
     }, 300);
   };
 
-  const getPaymentRules = () => {
-    const [year, termStr] = selectedTerm.split('/');
-    const isBreak = termStr.startsWith('b');
-    
-    if (isBreak) {
-      if (activeTab === 'room') return { allowed: false, message: 'ไม่มีการเก็บเงินห้องในช่วงปิดเทอม' };
-      return { allowed: true, rate: 10, maxAmount: 300, unit: 'วัน', minAmount: 10 }; 
-    }
-    
-    if (year === '1' || year === '2') {
-      if (activeTab === 'room') return { allowed: true, rate: 10, maxAmount: 180, unit: 'สัปดาห์', minAmount: 10 };
-      return { allowed: true, rate: 40, maxAmount: 720, unit: 'สัปดาห์', minAmount: 40 };
-    } else {
-      if (activeTab === 'room') return { allowed: true, rate: 10, maxAmount: 180, unit: 'สัปดาห์', minAmount: 10 };
-      return { allowed: true, rate: 90, maxAmount: 1620, unit: 'สัปดาห์', minAmount: 90 };
-    }
-  };
-
-  const rules = getPaymentRules();
+  // ดึง Rules ตามเทอมและแท็บปัจจุบัน
+  const rules = getTermConfig(selectedTerm, activeTab);
   const parsedAmount = parseFloat(amount) || 0;
   const isAmountValid = rules.allowed && parsedAmount >= rules.minAmount && parsedAmount <= rules.maxAmount && (parsedAmount % rules.rate === 0);
   const calculatedUnits = rules.allowed && isAmountValid ? Number((parsedAmount / rules.rate).toFixed(2)) : 0;
@@ -552,7 +576,7 @@ export default function App() {
 
   const filteredStudents = (students || []).filter(s => (s?.name || '').includes(studentSearchQuery) || String(s?.id || '').includes(studentSearchQuery));
 
-  // --- ลอจิกคำนวณตาราง 18 สัปดาห์ ---
+  // --- ลอจิกคำนวณตารางไดนามิก (สัปดาห์/วัน) ---
   const studentsWithSummary = filteredStudents.map(student => {
     
     let totalPaid = 0;
@@ -563,14 +587,14 @@ export default function App() {
       }
     });
       
-    const targetAmount = activeTab === 'room' ? STUDENT_TARGET_ROOM : STUDENT_TARGET_TRIP;
+    const targetAmount = rules.target;
     const remainingAmount = Math.max(0, targetAmount - totalPaid);
 
     const weeks = [];
     const ratePerWeek = Number(rules?.rate) || 10;
     let remaining = totalPaid; 
     
-    for (let i = 1; i <= 18; i++) {
+    for (let i = 1; i <= rules.weeks; i++) {
       if (remaining >= ratePerWeek) {
         weeks.push(ratePerWeek);
         remaining -= ratePerWeek;
@@ -602,25 +626,43 @@ export default function App() {
 
   const adminNotifications = (notifications || []).filter(n => n?.status === 'pending' && n?.term === selectedTerm && currentUser && ((currentUser.role === 'admin_room' && n?.fundType === 'room') || (currentUser.role === 'admin_trip' && n?.fundType === 'trip')));
 
+  // --- เป้าหมายรวมแบบไดนามิก ---
+  const currentYearInt = parseInt(selectedTerm.split('/')[0]);
+  const expectedStudentCount = currentYearInt === 1 ? 26 : 23;
+  
+  const configRoom = getTermConfig(selectedTerm, 'room');
+  const configTrip = getTermConfig(selectedTerm, 'trip');
+  
+  const termTargetRoom = configRoom.target * expectedStudentCount;
+  const termTargetTrip = configTrip.target * expectedStudentCount;
+  const termTotalTarget = termTargetRoom + termTargetTrip;
+
   const roomTransactions = termTransactions.filter(t => t?.fundType === 'room');
   const tripTransactions = termTransactions.filter(t => t?.fundType === 'trip');
   const totalRoomFundOverview = calculateNetTotal(roomTransactions);
   const totalTripFundOverview = calculateNetTotal(tripTransactions);
   const totalAllFunds = totalRoomFundOverview + totalTripFundOverview;
-  const totalMembersCount = students?.length || 0;
+  
+  // ปรับการคำนวณ % ให้สัมพันธ์กับเป้าหมายใหม่แต่ละเทอม
+  const roomPercent = termTargetRoom > 0 ? Math.min((totalRoomFundOverview / termTargetRoom) * 100, 100) : 0;
+  const tripPercent = termTargetTrip > 0 ? Math.min((totalTripFundOverview / termTargetTrip) * 100, 100) : 0;
+  const totalPercent = termTotalTarget > 0 ? Math.min((totalAllFunds / termTotalTarget) * 100, 100) : 0;
+  
+  const pRoom = termTotalTarget > 0 ? (totalRoomFundOverview / termTotalTarget) * 100 : 0;
+  const pTrip = termTotalTarget > 0 ? (totalTripFundOverview / termTotalTarget) * 100 : 0;
 
-  const roomPercent = Math.min((totalRoomFundOverview / TARGET_ROOM) * 100, 100);
-  const tripPercent = Math.min((totalTripFundOverview / TARGET_TRIP) * 100, 100);
-  const totalPercent = Math.min((totalAllFunds / (TARGET_ROOM + TARGET_TRIP)) * 100, 100);
-  const pRoom = (totalRoomFundOverview / (TARGET_ROOM + TARGET_TRIP)) * 100 || 0;
-  const pTrip = (totalTripFundOverview / (TARGET_ROOM + TARGET_TRIP)) * 100 || 0;
-
-  // --- เพิ่มลอจิกช่วยแสดงผล (Visual Fix) บังคับให้กราฟโดนัทมีสีขึ้นมาอย่างน้อย 2% หากมียอดเงิน ---
-  let visualPRoom = pRoom > 0 && pRoom < 2 ? 2 : pRoom;
-  let visualPTrip = pTrip > 0 && pTrip < 2 ? 2 : pTrip;
+  // --- ลอจิกช่วยแสดงผล (Visual Fix) บังคับให้กราฟโดนัทมีสีขึ้นมาอย่างน้อย 2% หากมียอดเงิน ---
+  let visualPRoom = (pRoom > 0 && pRoom < 2) ? 2 : pRoom;
+  let visualPTrip = (pTrip > 0 && pTrip < 2) ? 2 : pTrip;
   if (visualPRoom + visualPTrip > 100) {
     visualPRoom = pRoom;
     visualPTrip = pTrip;
+  }
+
+  // สร้างอาร์เรย์คอลัมน์หัวตารางแบบปลอดภัย (แทนที่ Array(18) แบบเดิม)
+  const tableColumns = [];
+  for (let i = 1; i <= rules.weeks; i++) {
+    tableColumns.push(i);
   }
 
   // --- Theme Configuration ---
@@ -656,8 +698,8 @@ export default function App() {
               <button onClick={() => setCurrentView('overview')} className={`px-3 md:px-4 py-2 rounded-xl transition-all font-medium text-sm md:text-base ${currentView === 'overview' ? 'bg-white/20 shadow-inner text-white' : 'hover:bg-white/10 text-indigo-100'}`}>แดชบอร์ด</button>
               <button onClick={() => {
                 setCurrentView('manage');
-                setActiveTab('room');       // บังคับกลับไปแท็บเงินห้อง
-                setShowTableView(false);    // บังคับปิดตาราง Excel กลับไปมุมมองปกติ
+                setActiveTab('room');
+                setShowTableView(false);
               }} className={`px-3 md:px-4 py-2 rounded-xl transition-all font-medium text-sm md:text-base ${currentView === 'manage' ? 'bg-white/20 shadow-inner text-white' : 'hover:bg-white/10 text-indigo-100'}`}>จัดการเงิน</button>
               
               {currentUser ? (
@@ -726,8 +768,8 @@ export default function App() {
               </div>
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col justify-center relative overflow-hidden">
                 <div className="absolute -right-4 -top-4 w-24 h-24 bg-gray-50 rounded-full z-0 opacity-50"></div>
-                <p className="text-sm font-medium text-gray-500 mb-1 flex items-center gap-2 relative z-10"><Users className="w-4 h-4 text-gray-500"/> จำนวนสมาชิก</p>
-                <h3 className="text-3xl font-bold text-gray-900 relative z-10">{totalMembersCount} <span className="text-base font-normal text-gray-500">คน</span></h3>
+                <p className="text-sm font-medium text-gray-500 mb-1 flex items-center gap-2 relative z-10"><Users className="w-4 h-4 text-gray-500"/> จำนวนสมาชิกเป้าหมาย</p>
+                <h3 className="text-3xl font-bold text-gray-900 relative z-10">{expectedStudentCount} <span className="text-base font-normal text-gray-500">คน</span></h3>
               </div>
             </div>
 
@@ -745,7 +787,7 @@ export default function App() {
                     <div className="w-full bg-gray-200/80 rounded-full h-3.5 mb-2 shadow-inner overflow-hidden relative">
                       <div className="bg-gradient-to-r from-indigo-400 to-indigo-600 h-3.5 rounded-full transition-all duration-1000 relative" style={{ width: `${totalPercent}%`, minWidth: totalPercent > 0 ? '14px' : '0' }}></div>
                     </div>
-                    <div className="flex justify-between text-xs font-medium"><span className="text-indigo-600">เก็บแล้ว: ฿{totalAllFunds.toLocaleString()}</span><span className="text-gray-500">เป้าหมาย: ฿{(TARGET_ROOM + TARGET_TRIP).toLocaleString()}</span></div>
+                    <div className="flex justify-between text-xs font-medium"><span className="text-indigo-600">เก็บแล้ว: ฿{totalAllFunds.toLocaleString()}</span><span className="text-gray-500">เป้าหมาย: ฿{termTotalTarget.toLocaleString()}</span></div>
                   </div>
                   <div className={`${themeRoom.lightCard} rounded-xl p-4 border hover:shadow-sm transition-shadow`}>
                     <div className="flex justify-between items-center mb-3">
@@ -755,7 +797,7 @@ export default function App() {
                     <div className="w-full bg-gray-200/80 rounded-full h-3 mb-2 shadow-inner overflow-hidden">
                       <div className="bg-gradient-to-r from-purple-400 to-fuchsia-500 h-3 rounded-full transition-all duration-1000" style={{ width: `${roomPercent}%`, minWidth: roomPercent > 0 ? '12px' : '0' }}></div>
                     </div>
-                    <div className="flex justify-between text-xs font-medium"><span className={themeRoom.text}>เก็บแล้ว: ฿{totalRoomFundOverview.toLocaleString()}</span><span className="text-gray-500">เป้าหมาย: ฿{TARGET_ROOM.toLocaleString()}</span></div>
+                    <div className="flex justify-between text-xs font-medium"><span className={themeRoom.text}>เก็บแล้ว: ฿{totalRoomFundOverview.toLocaleString()}</span><span className="text-gray-500">เป้าหมาย: ฿{termTargetRoom.toLocaleString()}</span></div>
                   </div>
                   <div className={`${themeTrip.lightCard} rounded-xl p-4 border hover:shadow-sm transition-shadow`}>
                     <div className="flex justify-between items-center mb-3">
@@ -765,24 +807,22 @@ export default function App() {
                     <div className="w-full bg-gray-200/80 rounded-full h-3 mb-2 shadow-inner overflow-hidden">
                       <div className="bg-gradient-to-r from-pink-400 to-rose-500 h-3 rounded-full transition-all duration-1000" style={{ width: `${tripPercent}%`, minWidth: tripPercent > 0 ? '12px' : '0' }}></div>
                     </div>
-                    <div className="flex justify-between text-xs font-medium"><span className={themeTrip.text}>เก็บแล้ว: ฿{totalTripFundOverview.toLocaleString()}</span><span className="text-gray-500">เป้าหมาย: ฿{TARGET_TRIP.toLocaleString()}</span></div>
+                    <div className="flex justify-between text-xs font-medium"><span className={themeTrip.text}>เก็บแล้ว: ฿{totalTripFundOverview.toLocaleString()}</span><span className="text-gray-500">เป้าหมาย: ฿{termTargetTrip.toLocaleString()}</span></div>
                   </div>
                 </div>
               </div>
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                 <h3 className="font-semibold text-lg text-gray-800 flex items-center gap-2 mb-6"><PieChart className="w-5 h-5 text-indigo-500" />สัดส่วนความสำเร็จ</h3>
                 <div className="flex items-center justify-center gap-8 h-48">
-                  {/* เปลี่ยนมาใช้ visualPRoom และ visualPTrip ในการวาดกราฟ */}
                   <div className="relative w-32 h-32 rounded-full flex items-center justify-center shadow-inner" style={{ background: `conic-gradient(${themeRoom.donutSlice} 0% ${visualPRoom}%, ${themeTrip.donutSlice} ${visualPRoom}% ${visualPRoom + visualPTrip}%, #f3f4f6 ${visualPRoom + visualPTrip}% 100%)` }}>
                     <div className="w-24 h-24 bg-white rounded-full flex flex-col items-center justify-center shadow-sm">
-                      {/* เปลี่ยน toFixed(0) เป็น toFixed(1) ให้แสดงทศนิยม */}
                       <span className="text-xs text-gray-500">เก็บได้แล้ว</span><span className="font-bold text-gray-800 text-lg">{totalPercent.toFixed(1)}%</span>
                     </div>
                   </div>
                   <div className="space-y-3">
                     <div className="flex items-center gap-2"><div className={`w-3 h-3 rounded-full`} style={{backgroundColor: themeRoom.donutSlice}}></div><span className="text-sm text-gray-600">เงินห้อง ({pRoom.toFixed(1)}%)</span></div>
                     <div className="flex items-center gap-2"><div className={`w-3 h-3 rounded-full`} style={{backgroundColor: themeTrip.donutSlice}}></div><span className="text-sm text-gray-600">เงินฟิวทริป ({pTrip.toFixed(1)}%)</span></div>
-                    <div className="flex items-center gap-2 mt-4 pt-4 border-t border-gray-100"><div className="w-3 h-3 rounded-full bg-gray-200"></div><span className="text-sm text-gray-400">ยังขาดอีก ฿{(TARGET_ROOM + TARGET_TRIP - totalAllFunds).toLocaleString()}</span></div>
+                    <div className="flex items-center gap-2 mt-4 pt-4 border-t border-gray-100"><div className="w-3 h-3 rounded-full bg-gray-200"></div><span className="text-sm text-gray-400">ยังขาดอีก ฿{Math.max(0, termTotalTarget - totalAllFunds).toLocaleString()}</span></div>
                   </div>
                 </div>
               </div>
@@ -839,7 +879,7 @@ export default function App() {
             {/* --- แสดงมุมมองตาราง (TABLE VIEW) --- */}
             {showTableView ? (
               <div className="space-y-8 animate-in fade-in duration-300">
-                {/* 1. ตารางเงินเก็บ 18 สัปดาห์ (แต่งให้เหมือน Excel) */}
+                {/* 1. ตารางเงินเก็บรายสัปดาห์ (แต่งให้เหมือน Excel) */}
                 <div className="bg-white shadow-sm overflow-hidden">
                   <div className="px-6 py-4 flex justify-between items-center bg-white border-b border-gray-300">
                     <h3 className={`font-bold text-lg flex items-center gap-2 ${currentTheme.text}`}>
@@ -852,55 +892,58 @@ export default function App() {
                     </div>
                   </div>
                   
-                  {/* ตารางแนวนอน 18 วีค ขอบแบบ Excel */}
-                  <div className="overflow-x-auto pb-4">
-                    <table className="w-full text-sm text-left border-collapse border border-gray-300 whitespace-nowrap">
-                      <thead className="bg-blue-50 text-blue-900">
-                        <tr>
-                          <th className="px-4 py-3 font-bold border border-gray-300 text-center w-16">ลำดับ</th>
-                          <th className="px-4 py-3 font-bold border border-gray-300 text-center w-28">รหัสนักศึกษา</th>
-                          <th className="px-4 py-3 font-bold border border-gray-300 text-center w-48">ชื่อ - นามสกุล</th>
-                          
-                          {/* หัวตาราง Week 1-18 */}
-                          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18].map((weekNum) => (
-                            <th key={weekNum} className="px-2 py-3 font-bold border border-gray-300 text-center w-16 bg-purple-50 text-purple-900">Week {weekNum}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white">
-                        {studentsWithSummary?.map((s, idx) => (
-                          <tr key={s?.id || idx} className="hover:bg-gray-50 transition-colors">
-                            {/* ข้อมูล 3 คอลัมน์แรก */}
-                            <td className="px-4 py-3 text-center border border-gray-300 text-gray-800">{idx + 1}</td>
-                            <td className="px-4 py-3 font-mono text-center border border-gray-300 text-gray-800">{s?.id}</td>
-                            <td className="px-4 py-3 font-medium border border-gray-300 text-gray-800">{s?.name}</td>
+                  {!rules.allowed ? (
+                    <div className="p-8 text-center text-gray-500 font-medium bg-gray-50">{rules.message}</div>
+                  ) : (
+                    <div className="overflow-x-auto pb-4">
+                      <table className="w-full text-sm text-left border-collapse border border-gray-300 whitespace-nowrap">
+                        <thead className="bg-blue-50 text-blue-900">
+                          <tr>
+                            <th className="px-4 py-3 font-bold border border-gray-300 text-center w-16">ลำดับ</th>
+                            <th className="px-4 py-3 font-bold border border-gray-300 text-center w-28">รหัสนักศึกษา</th>
+                            <th className="px-4 py-3 font-bold border border-gray-300 text-center w-48">ชื่อ - นามสกุล</th>
                             
-                            {/* บังคับวาดช่องตาราง 18 คอลัมน์เสมอ */}
-                            {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17].map((i) => {
-                              const val = s?.weeks?.[i];
-                              return (
-                                <td key={`week-${s?.id || idx}-${i}`} className="px-2 py-3 text-center border border-gray-300 bg-white">
-                                  {val > 0 ? (
-                                    <span className="font-bold text-emerald-600">{val}</span>
-                                  ) : (
-                                    <span className="text-gray-400 font-medium">-</span>
-                                  )}
-                                </td>
-                              );
-                            })}
+                            {/* หัวตารางวาดตามจำนวนสัปดาห์/วัน ที่ตั้งค่าไว้ */}
+                            {tableColumns.map((colNum) => (
+                              <th key={colNum} className="px-2 py-3 font-bold border border-gray-300 text-center w-16 bg-purple-50 text-purple-900">
+                                {rules.unit === 'วัน' ? 'D' : 'Week '}{colNum}
+                              </th>
+                            ))}
                           </tr>
-                        ))}
-                        {/* แถวสรุปยอดรวมด้านล่างสุด */}
-                        <tr className="bg-emerald-50">
-                          <td colSpan="3" className="px-4 py-3 text-right font-bold border border-gray-300 text-emerald-900">รวมรับทั้งหมด:</td>
-                          <td colSpan="18" className="px-4 py-3 text-left font-bold border border-gray-300 text-emerald-800">฿{totalActiveFund.toLocaleString()}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody className="bg-white">
+                          {studentsWithSummary?.map((s, idx) => (
+                            <tr key={s?.id || idx} className="hover:bg-gray-50 transition-colors">
+                              <td className="px-4 py-3 text-center border border-gray-300 text-gray-800">{idx + 1}</td>
+                              <td className="px-4 py-3 font-mono text-center border border-gray-300 text-gray-800">{s?.id}</td>
+                              <td className="px-4 py-3 font-medium border border-gray-300 text-gray-800">{s?.name}</td>
+                              
+                              {/* วาดช่องตารางตามจำนวนสัปดาห์ */}
+                              {tableColumns.map((colNum) => {
+                                const val = s?.weeks?.[colNum - 1]; // array index เริ่มที่ 0
+                                return (
+                                  <td key={`week-${s?.id || idx}-${colNum}`} className="px-2 py-3 text-center border border-gray-300 bg-white">
+                                    {val > 0 ? (
+                                      <span className="font-bold text-emerald-600">{val}</span>
+                                    ) : (
+                                      <span className="text-gray-400 font-medium">-</span>
+                                    )}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ))}
+                          <tr className="bg-emerald-50">
+                            <td colSpan="3" className="px-4 py-3 text-right font-bold border border-gray-300 text-emerald-900">รวมรับทั้งหมด:</td>
+                            <td colSpan={rules.weeks} className="px-4 py-3 text-left font-bold border border-gray-300 text-emerald-800">฿{totalActiveFund.toLocaleString()}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
 
-                {/* 2. ตารางรายรับ-รายจ่ายอื่นๆ (แต่งขอบให้เหมือนภาพ) */}
+                {/* 2. ตารางรายรับ-รายจ่ายอื่นๆ */}
                 <div className="bg-white shadow-sm overflow-hidden">
                   <div className="px-6 py-4 border-b border-gray-300 bg-white flex justify-between items-center">
                     <h3 className="font-bold text-lg text-emerald-700 flex items-center gap-2">
@@ -921,7 +964,6 @@ export default function App() {
                     <table className="w-full text-sm text-left border-collapse border border-gray-300 whitespace-nowrap">
                       <thead className="bg-purple-100 text-purple-900">
                         <tr>
-                          {/* แก้ไขชื่อคอลัมน์ให้ตรงกับรูปภาพเป๊ะๆ และใส่เส้นขอบทึบ */}
                           <th className="px-4 py-2 font-bold border border-gray-300 w-32 text-center">วัน/เดือน/ปี</th>
                           <th className="px-4 py-2 font-bold border border-gray-300 text-center">รายการ</th>
                           <th className="px-4 py-2 font-bold border border-gray-300 text-center w-32">จำนวน (บาท)</th>
@@ -970,23 +1012,27 @@ export default function App() {
                     </div>
                   </div>
                   <div className="overflow-y-auto flex-1">
-                    <table className="w-full text-left border-collapse">
-                      <thead className="bg-white sticky top-0 shadow-sm z-10">
-                        <tr className="text-gray-400 text-xs uppercase tracking-wider border-b border-gray-100">
-                          <th className="px-4 py-3 font-medium text-center w-12">ที่</th><th className="px-4 py-3 font-medium w-24">รหัสนศ.</th><th className="px-4 py-3 font-medium">ชื่อ-สกุล</th><th className="px-4 py-3 font-medium text-right">ชำระแล้ว</th><th className="px-4 py-3 font-medium text-right">ค้างชำระ</th>{currentUser && <th className="px-4 py-3 font-medium text-center">จัดการ</th>}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-50">
-                        {studentsWithSummary?.map((s, idx) => (
-                          <tr key={s?.id || idx} className="hover:bg-gray-50 transition-colors">
-                            <td className="px-4 py-4 text-center text-sm text-gray-400">{idx+1}</td><td className="px-4 py-4 text-sm text-gray-500 font-mono">{s?.id}</td><td className="px-4 py-4 font-medium text-sm md:text-base">{s?.name}</td>
-                            <td className="px-4 py-4 text-right"><span className={`font-bold ${(s?.totalPaid || 0)>0?'text-green-600':'text-gray-300'}`}>฿{(s?.totalPaid || 0).toLocaleString()}</span></td>
-                            <td className="px-4 py-4 text-right">{(s?.remainingAmount || 0)>0?<span className="font-semibold text-red-500 text-sm">฿{(s?.remainingAmount || 0).toLocaleString()}</span>:<span className="font-semibold text-emerald-500 text-sm inline-flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> ครบ</span>}</td>
-                            {currentUser && <td className="px-4 py-4 text-center"><button onClick={()=>openRecordModal(s)} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors bg-gray-100 hover:bg-gray-200 ${currentTheme.text} inline-flex items-center gap-1`}><PlusCircle className="w-3.5 h-3.5" /> จ่ายเงิน</button></td>}
+                    {!rules.allowed ? (
+                       <div className="p-8 text-center text-gray-500 font-medium">{rules.message}</div>
+                    ) : (
+                      <table className="w-full text-left border-collapse">
+                        <thead className="bg-white sticky top-0 shadow-sm z-10">
+                          <tr className="text-gray-400 text-xs uppercase tracking-wider border-b border-gray-100">
+                            <th className="px-4 py-3 font-medium text-center w-12">ที่</th><th className="px-4 py-3 font-medium w-24">รหัสนศ.</th><th className="px-4 py-3 font-medium">ชื่อ-สกุล</th><th className="px-4 py-3 font-medium text-right">ชำระแล้ว</th><th className="px-4 py-3 font-medium text-right">ค้างชำระ</th>{currentUser && <th className="px-4 py-3 font-medium text-center">จัดการ</th>}
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody className="divide-y divide-gray-50">
+                          {studentsWithSummary?.map((s, idx) => (
+                            <tr key={s?.id || idx} className="hover:bg-gray-50 transition-colors">
+                              <td className="px-4 py-4 text-center text-sm text-gray-400">{idx+1}</td><td className="px-4 py-4 text-sm text-gray-500 font-mono">{s?.id}</td><td className="px-4 py-4 font-medium text-sm md:text-base">{s?.name}</td>
+                              <td className="px-4 py-4 text-right"><span className={`font-bold ${(s?.totalPaid || 0)>0?'text-green-600':'text-gray-300'}`}>฿{(s?.totalPaid || 0).toLocaleString()}</span></td>
+                              <td className="px-4 py-4 text-right">{(s?.remainingAmount || 0)>0?<span className="font-semibold text-red-500 text-sm">฿{(s?.remainingAmount || 0).toLocaleString()}</span>:<span className="font-semibold text-emerald-500 text-sm inline-flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> ครบ</span>}</td>
+                              {currentUser && <td className="px-4 py-4 text-center"><button onClick={()=>openRecordModal(s)} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors bg-gray-100 hover:bg-gray-200 ${currentTheme.text} inline-flex items-center gap-1`}><PlusCircle className="w-3.5 h-3.5" /> จ่ายเงิน</button></td>}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
                   </div>
                 </div>
 
