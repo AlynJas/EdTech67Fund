@@ -646,7 +646,11 @@ export default function App() {
             </div>
             <div className="flex items-center space-x-3 md:space-x-4">
               <button onClick={() => setCurrentView('overview')} className={`px-3 md:px-4 py-2 rounded-xl transition-all font-medium text-sm md:text-base ${currentView === 'overview' ? 'bg-white/20 shadow-inner text-white' : 'hover:bg-white/10 text-indigo-100'}`}>แดชบอร์ด</button>
-              <button onClick={() => setCurrentView('manage')} className={`px-3 md:px-4 py-2 rounded-xl transition-all font-medium text-sm md:text-base ${currentView === 'manage' ? 'bg-white/20 shadow-inner text-white' : 'hover:bg-white/10 text-indigo-100'}`}>จัดการเงิน</button>
+              <button onClick={() => {
+                setCurrentView('manage');
+                setActiveTab('room');       // บังคับกลับไปแท็บเงินห้อง
+                setShowTableView(false);    // บังคับปิดตาราง Excel กลับไปมุมมองปกติ
+              }} className={`px-3 md:px-4 py-2 rounded-xl transition-all font-medium text-sm md:text-base ${currentView === 'manage' ? 'bg-white/20 shadow-inner text-white' : 'hover:bg-white/10 text-indigo-100'}`}>จัดการเงิน</button>
               
               {currentUser ? (
                 <div className="flex items-center space-x-3 ml-2 md:ml-4 border-l border-white/20 pl-3 md:pl-4">
@@ -803,8 +807,8 @@ export default function App() {
             )}
 
             <div className="flex space-x-2 bg-white p-2 rounded-2xl shadow-sm border border-gray-100">
-              <button onClick={() => setActiveTab('room')} className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-semibold transition-all ${activeTab === 'room' ? themeRoom.bgActive : 'text-gray-500 ' + themeRoom.bgHover}`}><Users className="w-5 h-5" /> บัญชีเงินห้อง</button>
-              <button onClick={() => setActiveTab('trip')} className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-semibold transition-all ${activeTab === 'trip' ? themeTrip.bgActive : 'text-gray-500 ' + themeTrip.bgHover}`}><Wallet className="w-5 h-5" /> บัญชีเงินฟิวทริป</button>
+              <button onClick={() => { setActiveTab('room'); setShowTableView(false); }} className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-semibold transition-all ${activeTab === 'room' ? themeRoom.bgActive : 'text-gray-500 ' + themeRoom.bgHover}`}><Users className="w-5 h-5" /> บัญชีเงินห้อง</button>
+              <button onClick={() => { setActiveTab('trip'); setShowTableView(false); }} className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-semibold transition-all ${activeTab === 'trip' ? themeTrip.bgActive : 'text-gray-500 ' + themeTrip.bgHover}`}><Wallet className="w-5 h-5" /> บัญชีเงินฟิวทริป</button>
             </div>
 
             <div className={`rounded-2xl shadow-sm border p-6 flex items-center justify-between text-white ${currentTheme.gradient}`}>
