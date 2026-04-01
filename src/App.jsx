@@ -175,7 +175,7 @@ export default function App() {
         weeks.push(remainingToDistribute); // จ่ายแบบมีเศษเหลือ
         remainingToDistribute = 0;
       } else {
-        weeks.push(''); // ยังไม่จ่าย (ปล่อยว่าง)
+        weeks.push(0); // ยังไม่จ่าย (ปล่อยว่าง)
       }
     }
 
@@ -880,7 +880,7 @@ export default function App() {
                   <div className="px-6 py-4 flex justify-between items-center bg-white border-b border-gray-300">
                     <h3 className={`font-bold text-lg flex items-center gap-2 ${currentTheme.text}`}>
                       <Table className="w-5 h-5" /> 
-                      {/* แก้ชื่อตารางให้เหมือนในภาพเป๊ะๆ */}
+                      {/* แก้ชื่อตาราง */}
                       เงินเก็บรับน้อง {activeTab === 'room' ? 'ED-TECH' : 'ฟิวทริป'} เทอม {formatTermName(selectedTerm).replace('ปี ', '').replace(' เทอม ', ' / ')}
                     </h3>
                     <div className="relative w-64">
@@ -894,12 +894,12 @@ export default function App() {
                     <table className="w-full text-sm text-left border-collapse min-w-max border border-gray-300">
                       <thead>
                         <tr>
-                          {/* หัวตาราง 3 คอลัมน์แรก พื้นหลังสีฟ้าอ่อนเหมือนรูปภาพ */}
+                          {/* หัวตาราง 3 คอลัมน์แรก พื้นหลังสีฟ้าอ่อน */}
                           <th className="px-4 py-2 font-bold border border-gray-300 text-center w-16 bg-blue-100 text-blue-900">ลำดับ</th>
                           <th className="px-4 py-2 font-bold border border-gray-300 w-28 bg-blue-100 text-blue-900">รหัสนักศึกษา</th>
                           <th className="px-4 py-2 font-bold border border-gray-300 w-48 sticky left-0 z-10 bg-blue-100 text-blue-900 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">ชื่อ - นามสกุล</th>
                           
-                          {/* หัวตาราง Week 1-18 พื้นหลังสีม่วงอ่อนเหมือนรูปภาพ */}
+                          {/* หัวตาราง Week 1-18 พื้นหลังสีม่วงอ่อน */}
                           {Array.from({ length: 18 }).map((_, i) => (
                             <th key={i} className="px-2 py-2 font-bold border border-gray-300 text-center min-w-[70px] bg-purple-100 text-purple-900">Week {i + 1}</th>
                           ))}
@@ -914,14 +914,14 @@ export default function App() {
                             <td className="px-4 py-2 font-medium text-gray-800 border border-gray-300 sticky left-0 bg-white z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">{s?.name}</td>
                             
                             {/* ข้อมูลยอดเงินรายสัปดาห์ */}
-                            {s?.weeks?.map((weekAmount, i) => (
-                            <td key={i} className="px-2 py-2 text-center border border-gray-300 bg-white">
-                                {weekAmount !== '' ? (
-                                <span className="font-semibold text-emerald-600">{weekAmount}</span>
+                            {s?.weeks?.map((val, i) => (
+                              <td key={`week-${s?.id}-${i}`} className="px-2 py-2 text-center border border-gray-300 bg-white">
+                                {val > 0 ? (
+                                  <span className="font-semibold text-emerald-600">{val}</span>
                                 ) : (
-                                <span className="text-gray-300">-</span>
+                                  <span className="text-gray-300">-</span>
                                 )}
-                            </td>
+                              </td>
                             ))}
                           </tr>
                         ))}
@@ -935,7 +935,7 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* 2. ตารางรายรับ-รายจ่ายอื่นๆ (แต่งขอบให้เหมือนภาพ) */}
+                {/* 2. ตารางรายรับ-รายจ่ายอื่นๆ */}
                 <div className="bg-white shadow-sm overflow-hidden">
                   <div className="px-6 py-4 border-b border-gray-300 bg-white flex justify-between items-center">
                     <h3 className="font-bold text-lg text-emerald-700 flex items-center gap-2">
@@ -956,7 +956,7 @@ export default function App() {
                     <table className="w-full text-sm text-left border-collapse border border-gray-300">
                       <thead className="bg-purple-100 text-purple-900">
                         <tr>
-                          {/* แก้ไขชื่อคอลัมน์ให้ตรงกับรูปภาพเป๊ะๆ และใส่เส้นขอบทึบ */}
+                          {/* แก้ไขชื่อคอลัมน์ และใส่เส้นขอบทึบ */}
                           <th className="px-4 py-2 font-bold border border-gray-300 w-32 text-center">วัน/เดือน/ปี</th>
                           <th className="px-4 py-2 font-bold border border-gray-300 text-center">รายการ</th>
                           <th className="px-4 py-2 font-bold border border-gray-300 text-center w-32">จำนวน (บาท)</th>
@@ -972,7 +972,7 @@ export default function App() {
                             </td>
                             <td className="px-4 py-2 font-medium text-gray-800 border border-gray-300">{tx?.description}</td>
                             <td className="px-4 py-2 text-center border border-gray-300">
-                              {/* ทำให้ตัวเลขชิดขวานิดๆ แต่ยังอยู่ตรงกลาง เหมือนในรูป */}
+                              {/* ทำให้ตัวเลขชิดขวานิดๆ แต่ยังอยู่ตรงกลาง */}
                               <span className={`block font-medium ${tx?.type === 'income' ? 'text-gray-800' : 'text-gray-800'}`}>
                                 {tx?.type === 'expense' ? '-' : ''}{tx?.amount}
                               </span>
