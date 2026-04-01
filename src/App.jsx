@@ -8,16 +8,7 @@ import {
 } from 'lucide-react';
 
 // นำเข้า (Import) การเชื่อมต่อ Supabase ของจริงเพื่อใช้งานทันที
-// import { supabase } from './supabaseClient';
-
-// --- จำลอง (Mock) การทำงานของ Supabase เพื่อไม่ให้หน้าพรีวิวในเว็บนี้ Error ---
-const supabase = {
-  from: () => ({
-    select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }),
-    insert: (items) => ({ select: () => Promise.resolve({ data: items, error: null }) }),
-    update: () => ({ eq: () => Promise.resolve({ error: null }) })
-  })
-};
+ import { supabase } from './supabaseClient';
 
 // --- ข้อมูลบัญชีแอดมิน ---
 const users = {
