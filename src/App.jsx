@@ -615,6 +615,14 @@ export default function App() {
   const pRoom = (totalRoomFundOverview / (TARGET_ROOM + TARGET_TRIP)) * 100 || 0;
   const pTrip = (totalTripFundOverview / (TARGET_ROOM + TARGET_TRIP)) * 100 || 0;
 
+  // --- เพิ่มลอจิกช่วยแสดงผล (Visual Fix) บังคับให้กราฟโดนัทมีสีขึ้นมาอย่างน้อย 2% หากมียอดเงิน ---
+  let visualPRoom = pRoom > 0 && pRoom < 2 ? 2 : pRoom;
+  let visualPTrip = pTrip > 0 && pTrip < 2 ? 2 : pTrip;
+  if (visualPRoom + visualPTrip > 100) {
+    visualPRoom = pRoom;
+    visualPTrip = pTrip;
+  }
+
   // --- Theme Configuration ---
   const themeRoom = {
     bgActive: 'bg-purple-600 text-white shadow-md', bgHover: 'hover:bg-purple-50', text: 'text-purple-600', icon: 'text-purple-500',
@@ -764,9 +772,11 @@ export default function App() {
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                 <h3 className="font-semibold text-lg text-gray-800 flex items-center gap-2 mb-6"><PieChart className="w-5 h-5 text-indigo-500" />สัดส่วนความสำเร็จ</h3>
                 <div className="flex items-center justify-center gap-8 h-48">
-                  <div className="relative w-32 h-32 rounded-full flex items-center justify-center shadow-inner" style={{ background: `conic-gradient(${themeRoom.donutSlice} 0% ${pRoom}%, ${themeTrip.donutSlice} ${pRoom}% ${pRoom + pTrip}%, #f3f4f6 ${pRoom + pTrip}% 100%)` }}>
+                  {/* เปลี่ยนมาใช้ visualPRoom และ visualPTrip ในการวาดกราฟ */}
+                  <div className="relative w-32 h-32 rounded-full flex items-center justify-center shadow-inner" style={{ background: `conic-gradient(${themeRoom.donutSlice} 0% ${visualPRoom}%, ${themeTrip.donutSlice} ${visualPRoom}% ${visualPRoom + visualPTrip}%, #f3f4f6 ${visualPRoom + visualPTrip}% 100%)` }}>
                     <div className="w-24 h-24 bg-white rounded-full flex flex-col items-center justify-center shadow-sm">
-                      <span className="text-xs text-gray-500">เก็บได้แล้ว</span><span className="font-bold text-gray-800 text-lg">{totalPercent.toFixed(0)}%</span>
+                      {/* เปลี่ยน toFixed(0) เป็น toFixed(1) ให้แสดงทศนิยม */}
+                      <span className="text-xs text-gray-500">เก็บได้แล้ว</span><span className="font-bold text-gray-800 text-lg">{totalPercent.toFixed(1)}%</span>
                     </div>
                   </div>
                   <div className="space-y-3">
