@@ -7,7 +7,7 @@ import {
   BookOpen, QrCode, Loader2, Upload, AlertCircle, KeyRound, Table, LayoutList
 } from 'lucide-react';
 
-// เรียกใช้ไฟล์ supabaseClient ของจริงที่คุณเชื่อมต่อไว้แล้ว (สำหรับรันในคอมพิวเตอร์ของคุณ ให้เอา // ด้านหน้าออกครับ)
+// เรียกใช้ไฟล์ supabaseClient ของจริงที่คุณเชื่อมต่อไว้แล้ว
 // import { supabase } from './supabaseClient';
 
 // --- จำลอง (Mock) การทำงานของ Supabase เพื่อให้หน้าเว็บพรีวิวฝั่งขวาทำงานได้ ---
