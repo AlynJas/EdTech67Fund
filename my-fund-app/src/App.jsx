@@ -7,15 +7,29 @@ import {
   BookOpen, QrCode, Loader2, Upload, AlertCircle, KeyRound, Table, LayoutList
 } from 'lucide-react';
 
-import { supabase } from './supabaseClient';
-// --- ข้อมูลจำลอง (Mock Data) ---
+// เรียกใช้ไฟล์ supabaseClient ของจริงที่คุณเชื่อมต่อไว้แล้ว (เอาเครื่องหมาย // ออกเมื่อรันในคอมพิวเตอร์ของคุณ)
+// import { supabase } from './supabaseClient';
+
+// --- จำลอง (Mock) การทำงานของ Supabase เพื่อไม่ให้หน้าพรีวิวในเว็บนี้ Error ---
+const supabase = {
+  from: () => ({
+    select: () => ({
+      order: () => Promise.resolve({ data: [], error: null })
+    }),
+    insert: (items) => ({
+      select: () => Promise.resolve({ data: items, error: null })
+    }),
+    update: () => ({
+      eq: () => Promise.resolve({ error: null })
+    })
+  })
+};
+// -------------------------------------------------------------------------
+
 const users = {
   'admin_room': { password: 'password', role: 'admin_room', name: 'ผู้ดูแลเงินห้อง' },
   'admin_trip': { password: 'password', role: 'admin_trip', name: 'ผู้ดูแลฟิวทริป' }
 };
-
-const SESSION_KEY = 'cs2_fund_session';
-const TEN_DAYS_MS = 10 * 24 * 60 * 60 * 1000;
 
 // --- ตั้งเป้าหมาย (Targets) ---
 const TARGET_ROOM = 15000;
@@ -38,12 +52,15 @@ const formatTermName = (termValue) => {
   return `ปี ${year} เทอม ${term}`;
 };
 
+const SESSION_KEY = 'cs2_fund_session';
+const TEN_DAYS_MS = 10 * 24 * 60 * 60 * 1000;
+
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [currentView, setCurrentView] = useState('overview'); 
   const [activeTab, setActiveTab] = useState('room'); 
   const [selectedTerm, setSelectedTerm] = useState('2/1'); 
-  const [transactions, setTransactions] = useState([]); // เปลี่ยนมาใช้ array ว่างตอนเริ่ม
+  const [transactions, setTransactions] = useState([]); 
   const [students, setStudents] = useState([]);
   
   // Login State
@@ -51,21 +68,21 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
 
-  // --- เพิ่มใหม่ทั้งหมด: Change Password State ---
-  const [cpModalOpen, setCpModalOpen] = useState(false); // ควบคุมการเปิด/ปิดหน้าต่างเปลี่ยนรหัส
-  const [cpUsername, setCpUsername] = useState(''); // เก็บชื่อผู้ใช้ที่กรอก
-  const [cpOldPassword, setCpOldPassword] = useState(''); // เก็บรหัสผ่านเดิมที่กรอก
-  const [cpNewPassword, setCpNewPassword] = useState(''); // เก็บรหัสผ่านใหม่ที่กรอก
-  const [cpError, setCpError] = useState(''); // เก็บข้อความแจ้งเตือน Error
-  const [cpSuccess, setCpSuccess] = useState(''); // เก็บข้อความแจ้งเตือนเมื่อสำเร็จ
+  // Change Password State
+  const [cpModalOpen, setCpModalOpen] = useState(false);
+  const [cpUsername, setCpUsername] = useState('');
+  const [cpOldPassword, setCpOldPassword] = useState('');
+  const [cpNewPassword, setCpNewPassword] = useState('');
+  const [cpError, setCpError] = useState('');
+  const [cpSuccess, setCpSuccess] = useState('');
 
   // Payment Record Modal State
   const [recordModalOpen, setRecordModalOpen] = useState(false);
   const [recordTarget, setRecordTarget] = useState(null);
   const [amount, setAmount] = useState('');
   const [paymentStep, setPaymentStep] = useState('input');
-  const [qrTimeLeft, setQrTimeLeft] = useState(660);
-  const [pendingTxId, setPendingTxId] = useState(null); // เก็บ ID รายการที่กำลังรอสลิป
+  const [qrTimeLeft, setQrTimeLeft] = useState(660); 
+  const [pendingTxId, setPendingTxId] = useState(null); 
   
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingTx, setEditingTx] = useState(null);
@@ -85,8 +102,8 @@ export default function App() {
   const [notifyModalOpen, setNotifyModalOpen] = useState(false);
   const [notifyTx, setNotifyTx] = useState(null);
   const [notifyReason, setNotifyReason] = useState('');
-  const [isVerifying, setIsVerifying] = useState(false); // เพิ่มสถานะกำลังโหลดตรวจสลิป
-  const [verifyingHistoryId, setVerifyingHistoryId] = useState(null); // <-- เพิ่มตัวแปรนี้ สำหรับตรวจสลิปย้อนหลัง
+  const [isVerifying, setIsVerifying] = useState(false); 
+  const [verifyingHistoryId, setVerifyingHistoryId] = useState(null);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [historyTx, setHistoryTx] = useState(null);
 
@@ -95,33 +112,27 @@ export default function App() {
   const [studentSearchQuery, setStudentSearchQuery] = useState(''); 
   const [successMsg, setSuccessMsg] = useState('');
 
+  // --- เพิ่ม State ควบคุมมุมมองตาราง ---
   const [showTableView, setShowTableView] = useState(false);
-  
+
   const paymentTimeoutRef = useRef(null);
   const qrTimerRef = useRef(null);
 
-  // Body Scroll Lock for Modals
-  const isAnyModalOpen = recordModalOpen || editModalOpen || otherRecordModalOpen || slipModalOpen || notifyModalOpen || historyModalOpen;
+  const isAnyModalOpen = recordModalOpen || editModalOpen || otherRecordModalOpen || slipModalOpen || notifyModalOpen || historyModalOpen || cpModalOpen;
   
-  // โหลดข้อมูลจาก Supabase ตอนเปิดเว็บครั้งแรก
   useEffect(() => {
     fetchTransactions();
     fetchStudents();
     
-    // --- เพิ่มใหม่ทั้งหมด: เช็ค Session ล็อกอินตอนเปิดเว็บ ---
-    const savedSessionStr = localStorage.getItem(SESSION_KEY); // ไปค้นหาข้อมูลที่เซฟไว้ในเครื่อง
-    if (savedSessionStr) { // ถ้าเคยล็อกอินไว้
+    const savedSessionStr = localStorage.getItem(SESSION_KEY);
+    if (savedSessionStr) {
       try {
-        const session = JSON.parse(savedSessionStr); // แปลงข้อมูลที่ได้มาเป็น Object
-        // เช็คว่าเวลาล่าสุดที่ใช้งาน ยังไม่เกิน 10 วันใช่ไหม (เวลาปัจจุบัน ลบ เวลาล่าสุด < 10 วัน)
+        const session = JSON.parse(savedSessionStr);
         if (Date.now() - session.lastActive < TEN_DAYS_MS) {
-          setCurrentUser(session.user); // สั่งล็อกอินอัตโนมัติทันที
-          
-          // อัปเดตเวลาล่าสุด (ต่ออายุ) ทันทีที่เปิดเว็บ
+          setCurrentUser(session.user);
           session.lastActive = Date.now();
           localStorage.setItem(SESSION_KEY, JSON.stringify(session));
         } else {
-          // ถ้าเกิน 10 วันให้ลบเซสชั่นทิ้ง (ล็อกเอาท์อัตโนมัติ)
           localStorage.removeItem(SESSION_KEY);
         }
       } catch (e) {
@@ -130,14 +141,12 @@ export default function App() {
     }
   }, []);
 
-  // --- เพิ่มใหม่ทั้งหมด: ระบบต่ออายุเซสชั่นอัตโนมัติ เมื่อมีการคลิกหรือพิมพ์ ---
   useEffect(() => {
     const handleActivity = () => {
-      if (currentUser) { // ทำงานเฉพาะตอนล็อกอินอยู่
+      if (currentUser) {
         const sessionStr = localStorage.getItem(SESSION_KEY);
         if (sessionStr) {
           const session = JSON.parse(sessionStr);
-          // อัปเดตเซสชั่นลง Storage เฉพาะเมื่อเวลาผ่านไป 1 นาที (ลดภาระคอมพิวเตอร์ไม่ต้องเซฟรัวๆ ทุกครั้งที่ขยับเมาส์)
           if (Date.now() - session.lastActive > 60000) {
             session.lastActive = Date.now();
             localStorage.setItem(SESSION_KEY, JSON.stringify(session));
@@ -145,78 +154,9 @@ export default function App() {
         }
       }
     };
-    // ดักจับเมื่อผู้ใช้คลิกเมาส์ หรือกดปุ่มบนคีย์บอร์ด
     window.addEventListener('click', handleActivity);
     window.addEventListener('keydown', handleActivity);
-    
-    // --- เพิ่มใหม่: ลอจิกสำหรับคำนวณตาราง Excel 18 สัปดาห์ ---
-  const weeklyRate = rules?.rate || 10; 
-  const totalWeeksToDisplay = 18;
-
-  const studentsWithSummary = filteredStudents.map(student => {
-    // ใช้ String().trim() เพื่อป้องกันช่องว่างแฝงจากฐานข้อมูล
-    const studentsWithSummary = filteredStudents.map(student => {
-    // 1. คำนวณยอดที่จ่ายไปแล้วทั้งหมดของนักศึกษาคนนี้ (รับประกันว่าเป็นตัวเลข 100%)
-    let totalPaid = 0;
-    (currentFundTransactions || []).forEach(tx => {
-      if (
-        tx?.type === 'student_payment' &&
-        tx?.status !== 'pending' &&
-        String(tx?.studentId).trim() === String(student?.id).trim()
-      ) {
-        totalPaid += parseFloat(tx?.amount) || 0;
-      }
-    });
-      
-    const targetAmount = activeTab === 'room' ? STUDENT_TARGET_ROOM : STUDENT_TARGET_TRIP;
-    const remainingAmount = Math.max(0, targetAmount - totalPaid);
-
-    // 2. กระจายยอดเงินลง 18 สัปดาห์อย่างรัดกุม
-    const weeks = [];
-    const ratePerWeek = parseFloat(rules?.rate) || 10;
-    let remaining = totalPaid; // เอาตัวเลขทั้งหมดมาตั้งต้น
-    
-    for (let i = 1; i <= 18; i++) {
-      if (remaining >= ratePerWeek) {
-        weeks.push(ratePerWeek); // จ่ายเต็มวีค
-        remaining -= ratePerWeek;
-      } else if (remaining > 0) {
-        weeks.push(remaining); // ใส่เศษเงินที่เหลือในวีคสุดท้าย
-        remaining = 0;
-      } else {
-        weeks.push(''); // ใส่ค่าว่าง (แทนที่ยังไม่จ่าย)
-      }
-    }
-
-    return { ...student, totalPaid, targetAmount, remainingAmount, weeks };
-  });
-      
-    // บังคับให้การวนลูป 18 สัปดาห์เป็นตัวเลขทั้งหมด
-    const safeWeeklyRate = Number(rules?.rate) || 10;
-    const weeks = [];
-    let remainingToDistribute = Number(totalPaid) || 0;
-    
-    const targetAmount = activeTab === 'room' ? STUDENT_TARGET_ROOM : STUDENT_TARGET_TRIP;
-    const remainingAmount = Math.max(0, targetAmount - totalPaid);
-    
-    for (let i = 1; i <= totalWeeksToDisplay; i++) {
-      if (remainingToDistribute >= weeklyRate) {
-        weeks.push(weeklyRate); // จ่ายเต็มสัปดาห์
-        remainingToDistribute -= weeklyRate;
-      } else if (remainingToDistribute > 0) {
-        weeks.push(remainingToDistribute); // จ่ายแบบมีเศษเหลือ
-        remainingToDistribute = 0;
-      } else {
-        weeks.push(0); // ยังไม่จ่าย (ปล่อยว่าง)
-      }
-    }
-
-    // ส่งคืนข้อมูลนักศึกษา พร้อมข้อมูล weeks แบบ Array 18 ช่อง
-    return { ...student, totalPaid, targetAmount, remainingAmount, weeks };
-  });
-  
     return () => {
-      // ล้างตัวดักจับออกเมื่อปิดหน้าเว็บ
       window.removeEventListener('click', handleActivity);
       window.removeEventListener('keydown', handleActivity);
     };
@@ -229,14 +169,14 @@ export default function App() {
       .order('timestamp', { ascending: false });
       
     if (data) {
-      // แปลงข้อมูลจากฐานข้อมูลให้ชื่อตัวแปรตรงกับที่แอพของคุณใช้
       const formattedData = data.map(tx => ({
         ...tx,
         studentId: tx.student_id,
         studentName: tx.student_name,
         fundType: tx.fund_type,
         recordedBy: tx.recorded_by,
-        slipUrl: tx.slip_url
+        slipUrl: tx.slip_url,
+        status: tx.status || 'completed'
       }));
       setTransactions(formattedData);
     }
@@ -246,7 +186,7 @@ export default function App() {
     const { data, error } = await supabase
       .from('students')
       .select('*')
-      .order('id', { ascending: true }); // เรียงตามรหัสนักศึกษา
+      .order('id', { ascending: true });
       
     if (data) {
       setStudents(data);
@@ -271,12 +211,11 @@ export default function App() {
 
   const handleLogin = (e) => {
     e.preventDefault();
-    let user = users[username]; // ตรวจสอบว่าเป็นแอดมินจำลองไหม
+    let user = users[username]; 
     
     if (!user) {
-      const student = students.find(s => String(s?.id) === String(username));
+      const student = students.find(s => String(s?.id).trim() === String(username).trim());
       if (student) {
-        // --- แก้ไข: ใช้รหัสผ่านจาก DB (ถ้าใน DB เป็นค่าว่าง จะให้ใช้คำว่า 'password' แทน) ---
         user = { password: student.password || 'password', role: 'student', name: student.name };
       }
     }
@@ -284,10 +223,7 @@ export default function App() {
     if (user && user.password === password) {
       const sessionUser = { username, ...user };
       setCurrentUser(sessionUser);
-      
-      // --- เพิ่มใหม่: บันทึกลง Local Storage ในคอมพิวเตอร์ผู้ใช้ ---
       localStorage.setItem(SESSION_KEY, JSON.stringify({ user: sessionUser, lastActive: Date.now() }));
-      
       setCurrentView('overview');
       setLoginError('');
       setUsername(''); setPassword('');
@@ -298,40 +234,32 @@ export default function App() {
 
   const handleLogout = () => { 
     setCurrentUser(null); 
-    // --- เพิ่มใหม่: ล้างข้อมูลการล็อกอินออกจากเครื่องเมื่อกดล็อกเอาท์ ---
     localStorage.removeItem(SESSION_KEY); 
     setCurrentView('overview'); 
   };
 
-  // ----------------------------------------------------
-  // ระบบเปลี่ยนรหัสผ่าน
-  // ----------------------------------------------------
   const submitChangePassword = async (e) => {
-    e.preventDefault(); // ป้องกันไม่ให้หน้าเว็บรีเฟรชตอนกด Submit
-    setCpError(''); // เคลียร์ข้อความแจ้งเตือนเก่า
+    e.preventDefault();
+    setCpError('');
     setCpSuccess('');
 
     let isMockAdmin = false;
-    let targetUser = users[cpUsername]; // หาว่าพิมพ์ชื่อแอดมินมาหรือเปล่า
+    let targetUser = users[cpUsername];
 
-    // ค้นหาว่าผู้ใช้ที่ต้องการเปลี่ยนรหัสคือใคร
     if (targetUser) {
       isMockAdmin = true;
     } else {
-      const student = students.find(s => String(s?.id) === String(cpUsername));
+      const student = students.find(s => String(s?.id).trim() === String(cpUsername).trim());
       if (student) {
-        // เอารหัสเดิมจากฐานข้อมูลมาเตรียมไว้ตรวจสอบ
         targetUser = { password: student.password || 'password', id: student.id };
       }
     }
 
-    // --- ตรวจสอบเงื่อนไขต่างๆ (Validation) ---
     if (!targetUser) {
       setCpError('ไม่พบชื่อผู้ใช้งาน หรือรหัสนักศึกษานี้ในระบบ');
       return;
     }
 
-    // ยืนยันรหัสผ่านเดิม (เอาที่พิมพ์มา เทียบกับที่อยู่ในฐานข้อมูล)
     if (targetUser.password !== cpOldPassword) {
       setCpError('รหัสผ่านเดิมไม่ถูกต้อง');
       return;
@@ -347,22 +275,16 @@ export default function App() {
       return;
     }
 
-    // --- อัปเดตรหัสผ่านใหม่ลงฐานข้อมูล Supabase ---
     const { error } = await supabase
-      .from('students') // ไปที่ตาราง students
-      .update({ password: cpNewPassword }) // แก้ไขคอลัมน์ password ให้เป็นรหัสใหม่
-      .eq('id', targetUser.id); // เฉพาะของนักศึกษาคนนี้เท่านั้น
+      .from('students')
+      .update({ password: cpNewPassword })
+      .eq('id', targetUser.id);
 
     if (error) {
       setCpError('เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่');
     } else {
-      // ถ้าสำเร็จ
       setCpSuccess('เปลี่ยนรหัสผ่านสำเร็จ! ท่านสามารถใช้รหัสผ่านใหม่ในการเข้าสู่ระบบครั้งต่อไป');
-      
-      // อัปเดตข้อมูล State (Array students) ในระบบทันที โดยไม่ต้องรีเฟรชเว็บ
       setStudents(students.map(s => s.id === targetUser.id ? { ...s, password: cpNewPassword } : s));
-      
-      // ตั้งเวลาหน่วง 3 วินาที เพื่อให้ผู้ใช้อ่านข้อความสำเร็จ ก่อนจะปิดหน้าต่าง
       setTimeout(() => {
         setCpModalOpen(false);
         setCpUsername(''); setCpOldPassword(''); setCpNewPassword('');
@@ -375,6 +297,7 @@ export default function App() {
     setRecordTarget(student);
     setAmount('');
     setPaymentStep('input');
+    setPendingTxId(null);
     setRecordModalOpen(true);
   };
 
@@ -382,10 +305,12 @@ export default function App() {
     if (paymentTimeoutRef.current) clearTimeout(paymentTimeoutRef.current);
     if (qrTimerRef.current) clearInterval(qrTimerRef.current);
     setRecordModalOpen(false);
-    setTimeout(() => setPaymentStep('input'), 300);
+    setTimeout(() => {
+      setPaymentStep('input');
+      setPendingTxId(null);
+    }, 300);
   };
 
-  // --- Payment Rules Logic ---
   const getPaymentRules = () => {
     const [year, termStr] = selectedTerm.split('/');
     const isBreak = termStr.startsWith('b');
@@ -395,11 +320,10 @@ export default function App() {
       return { allowed: true, rate: 10, maxAmount: 300, unit: 'วัน', minAmount: 10 }; 
     }
     
-    // เทอมปกติ
     if (year === '1' || year === '2') {
       if (activeTab === 'room') return { allowed: true, rate: 10, maxAmount: 180, unit: 'สัปดาห์', minAmount: 10 };
       return { allowed: true, rate: 40, maxAmount: 720, unit: 'สัปดาห์', minAmount: 40 };
-    } else { // ปี 3-4
+    } else {
       if (activeTab === 'room') return { allowed: true, rate: 10, maxAmount: 180, unit: 'สัปดาห์', minAmount: 10 };
       return { allowed: true, rate: 90, maxAmount: 1620, unit: 'สัปดาห์', minAmount: 90 };
     }
@@ -407,7 +331,6 @@ export default function App() {
 
   const rules = getPaymentRules();
   const parsedAmount = parseFloat(amount) || 0;
-  
   const isAmountValid = rules.allowed && parsedAmount >= rules.minAmount && parsedAmount <= rules.maxAmount && (parsedAmount % rules.rate === 0);
   const calculatedUnits = rules.allowed && isAmountValid ? Number((parsedAmount / rules.rate).toFixed(2)) : 0;
 
@@ -416,9 +339,8 @@ export default function App() {
     if (!currentUser || !recordTarget || !isAmountValid) return;
 
     setPaymentStep('qr');
-    setQrTimeLeft(660); // ตั้งเวลา 11 นาที
+    setQrTimeLeft(660); 
 
-    // สร้างรายการ "รอดำเนินการ (pending)" ลงในฐานข้อมูลทันทีที่สร้าง QR
     const newTimestamp = new Date().toISOString();
     const newDbTx = {
       type: 'student_payment', 
@@ -430,7 +352,7 @@ export default function App() {
       recorded_by: currentUser.name,
       timestamp: newTimestamp, 
       history: [{ action: 'create', amount: parsedAmount, recordedBy: currentUser.name, timestamp: newTimestamp }],
-      status: 'pending' // สำคัญ: กำหนดสถานะเป็นรอดำเนินการ
+      status: 'pending' 
     };
 
     const { data } = await supabase.from('transactions').insert([newDbTx]).select();
@@ -439,7 +361,7 @@ export default function App() {
         ...data[0], studentId: data[0].student_id, studentName: data[0].student_name, fundType: data[0].fund_type, recordedBy: data[0].recorded_by, slipUrl: data[0].slip_url, status: 'pending'
       };
       setTransactions(prev => [formattedTx, ...prev]);
-      setPendingTxId(formattedTx.id); // เก็บ ID ไว้ใช้อัปเดตตอนตรวจสลิปผ่าน
+      setPendingTxId(formattedTx.id); 
     }
 
     qrTimerRef.current = setInterval(() => {
@@ -451,20 +373,19 @@ export default function App() {
   };
 
   const handleVerifySlip = async (e) => {
-  const file = e.target.files[0]; // 1. ดึงไฟล์รูปภาพสลิปที่ผู้ใช้อัปโหลดมา
-  if (!file) return;
+    const file = e.target.files[0]; 
+    if (!file) return;
 
-  setIsVerifying(true); // เปิดไอคอนหมุนๆ ให้รู้ว่ากำลังตรวจ
+    setIsVerifying(true); 
+    if (qrTimerRef.current) clearInterval(qrTimerRef.current);
 
-  try {
-    const formData = new FormData();
-    formData.append('files', file);
+    try {
+      const formData = new FormData();
+      formData.append('files', file);
 
-    // ดึงกุญแจ API จากไฟล์ .env
-    const branchId = import.meta.env.VITE_SLIPOK_BRANCH_ID;
-    const apiKey = import.meta.env.VITE_SLIPOK_API_KEY;
+      const branchId = import.meta.env.VITE_SLIPOK_BRANCH_ID;
+      const apiKey = import.meta.env.VITE_SLIPOK_API_KEY;
 
-    // ส่งรูปสลิปไปตรวจสอบผ่าน "ท่อลอดส่วนตัวของ Vercel"
       const response = await fetch(`/slipok-api/${branchId}`, {
         method: 'POST',
         headers: { 'x-authorization': apiKey },
@@ -472,39 +393,23 @@ export default function App() {
       });
       const result = await response.json();
 
-    // 3. เช็คผลลัพธ์: ถ้าตรวจผ่าน (success) และ ยอดเงินตรง (amount === parsedAmount)
-    if (result.success === true && result.data.amount === parsedAmount) {
+      if (result.success === true && result.data.amount === parsedAmount) {
         setPaymentStep('success'); 
         
-        // สลิปถูกต้อง! ทำการอัปเดตสถานะรายการที่สร้างไว้เป็น completed
         const slipUrl = result.data ? result.data.url : null;
         await supabase.from('transactions').update({ status: 'completed', slip_url: slipUrl }).eq('id', pendingTxId);
 
-        // อัปเดตข้อมูลบนหน้าจอให้กลายเป็นสำเร็จ
         setTransactions(prev => prev.map(t => t.id === pendingTxId ? { ...t, status: 'completed', slipUrl: slipUrl } : t));
 
-    if (data && data.length > 0) {
-      // เอาข้อมูลที่เพิ่งเซฟเสร็จมาอัปเดตหน้าจอทันที
-      const formattedTx = {
-        ...data[0],
-        studentId: data[0].student_id,
-        studentName: data[0].student_name,
-        fundType: data[0].fund_type,
-        recordedBy: data[0].recorded_by,
-        slipUrl: data[0].slip_url
-      };
-      setTransactions(prev => [formattedTx, ...prev]);
-    }
+        setSuccessMsg(`โอนเงินสำเร็จ! บันทึกยอด ฿${parsedAmount} ให้ ${recordTarget.name} แล้ว`);
 
-    setSuccessMsg(`บันทึกการชำระเงินให้ ${recordTarget.name} จำนวน ฿${parsedAmount} เรียบร้อยแล้ว!`);
+        paymentTimeoutRef.current = setTimeout(() => {
+          closeRecordModal();
+          setTimeout(() => setSuccessMsg(''), 4000);
+        }, 2000); 
 
-    paymentTimeoutRef.current = setTimeout(() => {
-      closeRecordModal();
-      setTimeout(() => setSuccessMsg(''), 4000);
-    }, 1500); 
-  } else {
-        // ถ้าไม่ผ่าน ให้แจ้งเตือน
-        alert(`ตรวจไม่ผ่าน! \nเหตุผล: ${result.message}`);
+      } else {
+        alert(`สลิปไม่ถูกต้อง หรือ ยอดเงินไม่ตรง!\nกรุณาตรวจสอบสลิปอีกครั้ง (ต้องการยอด ฿${parsedAmount})`);
         setPaymentStep('qr');
       }
     } catch (error) {
@@ -516,12 +421,11 @@ export default function App() {
     }
   };
 
-  // --- ฟังก์ชันอัปโหลดสลิปย้อนหลัง จากตารางประวัติ ---
   const handleVerifySlipFromHistory = async (e, tx) => {
     const file = e.target.files[0]; 
     if (!file) return;
 
-    setVerifyingHistoryId(tx.id); // แสดงไอคอนโหลดเฉพาะแถวนั้น
+    setVerifyingHistoryId(tx.id);
 
     try {
       const formData = new FormData();
@@ -536,7 +440,6 @@ export default function App() {
       });
       const result = await response.json();
 
-      // เช็คว่าสลิปที่อัปย้อนหลัง ยอดเงินตรงกับที่ค้างไว้ (tx.amount) หรือไม่
       if (result.success === true && result.data.amount === tx.amount) {
         const slipUrl = result.data ? result.data.url : null;
         await supabase.from('transactions').update({ status: 'completed', slip_url: slipUrl }).eq('id', tx.id);
@@ -554,13 +457,15 @@ export default function App() {
       setVerifyingHistoryId(null);
     }
   };
-  
-  const handleUploadSlip = (e, txId) => {
+
+  const handleUploadSlip = async (e, txId) => {
     const file = e.target.files[0];
     if (!file) return;
-    const slipUrl = URL.createObjectURL(file);
-    const updatedTx = transactions.map(t => t.id === txId ? { ...t, slipUrl } : t);
-    setTransactions(updatedTx);
+    const slipUrl = URL.createObjectURL(file); 
+    
+    await supabase.from('transactions').update({ status: 'completed' }).eq('id', txId);
+    
+    setTransactions(prev => prev.map(t => t.id === txId ? { ...t, slipUrl: slipUrl, status: 'completed' } : t));
     setSuccessMsg('แนบสลิปการโอนเงินสำเร็จ!');
     setTimeout(() => setSuccessMsg(''), 3000);
   };
@@ -582,16 +487,14 @@ export default function App() {
       amount: parseFloat(otherAmount), 
       recorded_by: currentUser.name, 
       timestamp: newTimestamp,
-      history: historyData
+      history: historyData,
+      status: 'completed'
     };
 
-    // ส่งข้อมูลบันทึกลง Supabase
-    const { data, error } = await supabase.from('transactions').insert([newDbTx]).select();
+    const { data } = await supabase.from('transactions').insert([newDbTx]).select();
 
     if (data && data.length > 0) {
-      const formattedTx = {
-         ...data[0], fundType: data[0].fund_type, recordedBy: data[0].recorded_by, slipUrl: data[0].slip_url
-      };
+      const formattedTx = { ...data[0], fundType: data[0].fund_type, recordedBy: data[0].recorded_by, slipUrl: data[0].slip_url, status: 'completed' };
       setTransactions([formattedTx, ...transactions]);
     }
 
@@ -606,7 +509,6 @@ export default function App() {
     const newTimestamp = new Date().toISOString();
     const newAmount = parseFloat(editAmount);
     
-    // ดึงประวัติเดิมมาเพิ่มประวัติใหม่
     const currentHistory = editingTx.history || [];
     const historyEntry = { action: 'edit', amount: newAmount, description: editingTx.type !== 'student_payment' ? editDescription : undefined, recordedBy: currentUser.name, timestamp: newTimestamp };
     const updatedHistory = [...currentHistory, historyEntry];
@@ -617,14 +519,11 @@ export default function App() {
       history: updatedHistory
     };
 
-    // อัปเดตข้อมูลที่แก้ไขกลับไปที่ Supabase
     const { error } = await supabase.from('transactions').update(updateData).eq('id', editingTx.id);
 
     if (!error) {
       const updatedTx = transactions.map(t => {
-        if (t.id === editingTx.id) {
-          return { ...t, ...updateData };
-        }
+        if (t.id === editingTx.id) return { ...t, ...updateData };
         return t;
       });
       setTransactions(updatedTx);
@@ -644,7 +543,7 @@ export default function App() {
     setNotifyModalOpen(false); setSuccessMsg('ส่งคำขอแก้ไขไปยังแอดมินเรียบร้อยแล้ว'); setTimeout(() => setSuccessMsg(''), 3000);
   };
 
-  const markNotificationResolved = (id) => setNotifications(notifications.map(n => n.id === id ? { ...n, status: 'resolved' } : n));
+  const markNotificationResolved = (id) => setNotifications((notifications || []).map(n => n?.id === id ? { ...n, status: 'resolved' } : n));
   const formatDate = (isoString) => new Date(isoString).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
 
   // --- Data Filtering & Calculations ---
@@ -652,79 +551,76 @@ export default function App() {
   
   const calculateNetTotal = (txs) => (txs || [])
     .filter(tx => tx?.status !== 'pending')
-    .reduce((sum, tx) => tx?.type === 'expense' ? sum - (tx?.amount || 0) : sum + (tx?.amount || 0), 0);
+    .reduce((sum, tx) => tx?.type === 'expense' ? sum - (Number(tx?.amount) || 0) : sum + (Number(tx?.amount) || 0), 0);
 
   const currentFundTransactions = termTransactions.filter(t => t?.fundType === activeTab);
   const totalActiveFund = calculateNetTotal(currentFundTransactions);
 
-  const filteredStudents = (students || []).filter(s => (s?.name || '').includes(studentSearchQuery) || (s?.id || '').includes(studentSearchQuery));
+  const filteredStudents = (students || []).filter(s => (s?.name || '').includes(studentSearchQuery) || String(s?.id || '').includes(studentSearchQuery));
+
+  // --- ✅ เพิ่มใหม่: ลอจิกคำนวณตาราง 18 สัปดาห์ (วางในตำแหน่งที่ถูกต้อง) ---
   const studentsWithSummary = filteredStudents.map(student => {
-    const studentsWithSummary = filteredStudents.map(student => {
-    // 1. คำนวณยอดที่จ่ายไปแล้วทั้งหมดของนักศึกษาคนนี้ (รับประกันว่าเป็นตัวเลข 100%)
+    
+    // 1. คำนวณยอดที่จ่ายไปแล้วทั้งหมดของนักศึกษาคนนี้
     let totalPaid = 0;
     (currentFundTransactions || []).forEach(tx => {
+      // ✅ ใช้ String().trim() ทั้งสองฝั่ง ป้องกันช่องว่างแฝงจากฐานข้อมูล
       if (
         tx?.type === 'student_payment' &&
         tx?.status !== 'pending' &&
         String(tx?.studentId).trim() === String(student?.id).trim()
       ) {
-        totalPaid += parseFloat(tx?.amount) || 0;
+        totalPaid += parseFloat(tx?.amount) || 0; // ✅ สะสมยอดเงิน (บังคับเป็นตัวเลข)
       }
     });
       
     const targetAmount = activeTab === 'room' ? STUDENT_TARGET_ROOM : STUDENT_TARGET_TRIP;
     const remainingAmount = Math.max(0, targetAmount - totalPaid);
 
-    // 2. กระจายยอดเงินลง 18 สัปดาห์อย่างรัดกุม
+    // 2. กระจายยอดเงินลงกล่อง 18 สัปดาห์
     const weeks = [];
     const ratePerWeek = parseFloat(rules?.rate) || 10;
-    let remaining = totalPaid; // เอาตัวเลขทั้งหมดมาตั้งต้น
+    let remaining = totalPaid; // เริ่มต้นด้วยยอดเงินทั้งหมดที่โอนมา
     
     for (let i = 1; i <= 18; i++) {
       if (remaining >= ratePerWeek) {
-        weeks.push(ratePerWeek); // จ่ายเต็มวีค
+        weeks.push(ratePerWeek); // ✅ ถ้าเงินเหลือพอจ่ายเต็มสัปดาห์ ก็ใส่เต็ม
         remaining -= ratePerWeek;
       } else if (remaining > 0) {
-        weeks.push(remaining); // ใส่เศษเงินที่เหลือในวีคสุดท้าย
+        weeks.push(remaining); // ✅ ถ้าเป็นเศษ ก็ใส่เศษที่เหลือลงในสัปดาห์นั้น
         remaining = 0;
       } else {
-        weeks.push(''); // ใส่ค่าว่าง (แทนที่ยังไม่จ่าย)
+        weeks.push(''); // ✅ ถ้าเงินหมดแล้ว ให้ใส่ค่าว่าง ('') เพื่อให้ตารางรู้ว่ายังไม่จ่าย
       }
     }
 
+    // ✅ คืนค่าข้อมูลนักศึกษา พร้อมกับ Array ยอดเงิน 18 ช่อง (weeks) กลับไปให้ตารางวาด
     return { ...student, totalPaid, targetAmount, remainingAmount, weeks };
-  });
-  
-    const targetAmount = activeTab === 'room' ? STUDENT_TARGET_ROOM : STUDENT_TARGET_TRIP;
-    const remainingAmount = Math.max(0, targetAmount - totalPaid);
-    return { ...student, totalPaid, targetAmount, remainingAmount };
   });
 
   const filteredHistory = currentFundTransactions.filter(tx => {
-    const targetName = tx.type === 'student_payment' ? tx.studentName : (tx.description || '');
-    const targetId = tx.studentId || '';
-    const matchName = targetName.toLowerCase().includes(searchQuery.toLowerCase()) || targetId.includes(searchQuery);
-    const matchDate = searchDate ? tx.timestamp.startsWith(searchDate) : true;
+    const targetName = tx?.type === 'student_payment' ? tx?.studentName : (tx?.description || '');
+    const targetId = String(tx?.studentId || '');
+    const matchName = (targetName || '').toLowerCase().includes(searchQuery.toLowerCase()) || targetId.includes(searchQuery);
+    const matchDate = searchDate ? (tx?.timestamp || '').startsWith(searchDate) : true;
     return matchName && matchDate;
   });
 
-  // กรองรายการอื่นๆ (รายรับ-รายจ่ายอื่น ที่ไม่ใช่นักศึกษาจ่าย)
   const otherTransactionsList = currentFundTransactions.filter(tx => tx?.type !== 'student_payment' && tx?.status !== 'pending');
-  // ค้นหาในตารางรายการอื่นๆ
   const filteredOtherTransactions = otherTransactionsList.filter(tx => {
     const matchName = (tx?.description || '').toLowerCase().includes(searchQuery.toLowerCase());
     const matchDate = searchDate ? (tx?.timestamp || '').startsWith(searchDate) : true;
     return matchName && matchDate;
   });
 
-  const adminNotifications = notifications.filter(n => n.status === 'pending' && n.term === selectedTerm && currentUser && ((currentUser.role === 'admin_room' && n.fundType === 'room') || (currentUser.role === 'admin_trip' && n.fundType === 'trip')));
+  const adminNotifications = (notifications || []).filter(n => n?.status === 'pending' && n?.term === selectedTerm && currentUser && ((currentUser.role === 'admin_room' && n?.fundType === 'room') || (currentUser.role === 'admin_trip' && n?.fundType === 'trip')));
 
-  const roomTransactions = termTransactions.filter(t => t.fundType === 'room');
-  const tripTransactions = termTransactions.filter(t => t.fundType === 'trip');
+  const roomTransactions = termTransactions.filter(t => t?.fundType === 'room');
+  const tripTransactions = termTransactions.filter(t => t?.fundType === 'trip');
   const totalRoomFundOverview = calculateNetTotal(roomTransactions);
   const totalTripFundOverview = calculateNetTotal(tripTransactions);
   const totalAllFunds = totalRoomFundOverview + totalTripFundOverview;
-  const totalMembersCount = students.length;
+  const totalMembersCount = students?.length || 0;
 
   const roomPercent = Math.min((totalRoomFundOverview / TARGET_ROOM) * 100, 100);
   const tripPercent = Math.min((totalTripFundOverview / TARGET_TRIP) * 100, 100);
@@ -737,22 +633,24 @@ export default function App() {
     bgActive: 'bg-purple-600 text-white shadow-md', bgHover: 'hover:bg-purple-50', text: 'text-purple-600', icon: 'text-purple-500',
     badge: 'bg-purple-100 text-purple-800', border: 'border-purple-200', gradient: 'bg-gradient-to-r from-purple-500 to-fuchsia-500',
     btnPrimary: 'bg-purple-600 hover:bg-purple-700', lightCard: 'bg-purple-50/50 border-purple-50', donutSlice: '#a855f7',
-    progressBar: 'bg-gradient-to-r from-purple-400 to-fuchsia-500'
+    progressBar: 'bg-gradient-to-r from-purple-400 to-fuchsia-500',
+    tableHeader: 'bg-purple-50 text-purple-800 border-purple-100'
   };
 
   const themeTrip = {
     bgActive: 'bg-pink-600 text-white shadow-md', bgHover: 'hover:bg-pink-50', text: 'text-pink-600', icon: 'text-pink-500',
     badge: 'bg-pink-100 text-pink-800', border: 'border-pink-200', gradient: 'bg-gradient-to-r from-pink-500 to-rose-400',
     btnPrimary: 'bg-pink-600 hover:bg-pink-700', lightCard: 'bg-pink-50/50 border-pink-50', donutSlice: '#ec4899',
-    progressBar: 'bg-gradient-to-r from-pink-400 to-rose-500'
+    progressBar: 'bg-gradient-to-r from-pink-400 to-rose-500',
+    tableHeader: 'bg-pink-50 text-pink-800 border-pink-100'
   };
 
   const currentTheme = activeTab === 'room' ? themeRoom : themeTrip;
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800 font-sans pb-12">
-      {/* Navbar - Modern Gradient Indigo Theme */}
-      <nav className="bg-gradient-to-r from-indigo-800 via-indigo-600 to-violet-600 text-white shadow-lg sticky top-0 z-20">
+      {/* Navbar */}
+      <nav className="bg-gradient-to-r from-indigo-800 via-indigo-600 to-violet-600 text-white shadow-lg sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex justify-between items-center py-4">
             <div className="flex items-center space-x-2">
@@ -785,7 +683,7 @@ export default function App() {
 
       {/* Term Selector Header */}
       {currentView !== 'login' && (
-        <div className="bg-white border-b border-gray-200 shadow-sm sticky top-[72px] z-10">
+        <div className="bg-white border-b border-gray-200 shadow-sm sticky top-[72px] z-20">
           <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
             <div className="flex items-center gap-2">
               <BookOpen className="w-5 h-5 text-gray-400" />
@@ -927,7 +825,7 @@ export default function App() {
               <div className="p-4 bg-white/20 rounded-full backdrop-blur-sm hidden sm:block">{activeTab === 'room' ? <Users className="w-10 h-10" /> : <Wallet className="w-10 h-10" />}</div>
             </div>
 
-            {/* --- เพิ่มใหม่: ปุ่มกดสลับหน้าจอ --- */}
+            {/* --- ปุ่มสลับมุมมองตาราง --- */}
             <div className="flex justify-end">
               <button 
                 onClick={() => setShowTableView(!showTableView)} 
@@ -937,7 +835,7 @@ export default function App() {
               </button>
             </div>
 
-            {/* --- เพิ่มใหม่: เงื่อนไขสลับการวาดหน้าจอ (Ternary Operator) --- */}
+            {/* --- แสดงมุมมองตาราง (TABLE VIEW) --- */}
             {showTableView ? (
               <div className="space-y-8 animate-in fade-in duration-300">
                 {/* 1. ตารางเงินเก็บ 18 สัปดาห์ (แต่งให้เหมือน Excel) */}
@@ -945,7 +843,6 @@ export default function App() {
                   <div className="px-6 py-4 flex justify-between items-center bg-white border-b border-gray-300">
                     <h3 className={`font-bold text-lg flex items-center gap-2 ${currentTheme.text}`}>
                       <Table className="w-5 h-5" /> 
-                      {/* แก้ชื่อตาราง */}
                       เงินเก็บรับน้อง {activeTab === 'room' ? 'ED-TECH' : 'ฟิวทริป'} เทอม {formatTermName(selectedTerm).replace('ปี ', '').replace(' เทอม ', ' / ')}
                     </h3>
                     <div className="relative w-64">
@@ -959,13 +856,10 @@ export default function App() {
                     <table className="w-full text-sm text-left border-collapse min-w-max border border-gray-300">
                       <thead>
                         <tr>
-                          {/* หัวตาราง 3 คอลัมน์แรก พื้นหลังสีฟ้าอ่อน */}
                           <th className="px-4 py-2 font-bold border border-gray-300 text-center w-16 bg-blue-100 text-blue-900">ลำดับ</th>
                           <th className="px-4 py-2 font-bold border border-gray-300 w-28 bg-blue-100 text-blue-900">รหัสนักศึกษา</th>
                           <th className="px-4 py-2 font-bold border border-gray-300 w-48 sticky left-0 z-10 bg-blue-100 text-blue-900 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">ชื่อ - นามสกุล</th>
-                          
-                          {/* หัวตาราง Week 1-18 พื้นหลังสีม่วงอ่อน */}
-                          {Array.from({ length: 18 }).map((_, i) => (
+                          {[...Array(18)].map((_, i) => (
                             <th key={i} className="px-2 py-2 font-bold border border-gray-300 text-center min-w-[70px] bg-purple-100 text-purple-900">Week {i + 1}</th>
                           ))}
                         </tr>
@@ -973,15 +867,13 @@ export default function App() {
                       <tbody>
                         {studentsWithSummary?.map((s, idx) => (
                           <tr key={s?.id || idx} className="hover:bg-gray-50 transition-colors">
-                            {/* ข้อมูล 3 คอลัมน์แรก */}
                             <td className="px-4 py-2 text-center text-gray-800 border border-gray-300 bg-white">{idx + 1}</td>
                             <td className="px-4 py-2 font-mono text-gray-800 border border-gray-300 bg-white">{s?.id}</td>
                             <td className="px-4 py-2 font-medium text-gray-800 border border-gray-300 sticky left-0 bg-white z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">{s?.name}</td>
                             
-                            {/* ข้อมูลยอดเงินรายสัปดาห์ */}
                             {s?.weeks?.map((val, i) => (
                               <td key={`week-${s?.id}-${i}`} className="px-2 py-2 text-center border border-gray-300 bg-white">
-                                {val > 0 ? (
+                                {val !== '' ? (
                                   <span className="font-semibold text-emerald-600">{val}</span>
                                 ) : (
                                   <span className="text-gray-300">-</span>
@@ -1000,7 +892,7 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* 2. ตารางรายรับ-รายจ่ายอื่นๆ */}
+                {/* 2. ตารางรายรับ-รายจ่ายอื่นๆ (แต่งขอบให้เหมือนภาพ) */}
                 <div className="bg-white shadow-sm overflow-hidden">
                   <div className="px-6 py-4 border-b border-gray-300 bg-white flex justify-between items-center">
                     <h3 className="font-bold text-lg text-emerald-700 flex items-center gap-2">
@@ -1021,7 +913,7 @@ export default function App() {
                     <table className="w-full text-sm text-left border-collapse border border-gray-300">
                       <thead className="bg-purple-100 text-purple-900">
                         <tr>
-                          {/* แก้ไขชื่อคอลัมน์ และใส่เส้นขอบทึบ */}
+                          {/* แก้ไขชื่อคอลัมน์ให้ตรงกับรูปภาพเป๊ะๆ และใส่เส้นขอบทึบ */}
                           <th className="px-4 py-2 font-bold border border-gray-300 w-32 text-center">วัน/เดือน/ปี</th>
                           <th className="px-4 py-2 font-bold border border-gray-300 text-center">รายการ</th>
                           <th className="px-4 py-2 font-bold border border-gray-300 text-center w-32">จำนวน (บาท)</th>
@@ -1031,13 +923,12 @@ export default function App() {
                       </thead>
                       <tbody className="bg-white">
                         {filteredOtherTransactions?.length > 0 ? filteredOtherTransactions?.map((tx, idx) => (
-                          <tr key={tx?.id || idx} className="hover:bg-gray-50 transition-colors">
+                          <tr key={tx?.id || `other-${idx}`} className="hover:bg-gray-50 transition-colors">
                             <td className="px-4 py-2 text-center text-gray-800 border border-gray-300">
                               {new Date(tx?.timestamp).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                             </td>
                             <td className="px-4 py-2 font-medium text-gray-800 border border-gray-300">{tx?.description}</td>
                             <td className="px-4 py-2 text-center border border-gray-300">
-                              {/* ทำให้ตัวเลขชิดขวานิดๆ แต่ยังอยู่ตรงกลาง */}
                               <span className={`block font-medium ${tx?.type === 'income' ? 'text-gray-800' : 'text-gray-800'}`}>
                                 {tx?.type === 'expense' ? '-' : ''}{tx?.amount}
                               </span>
@@ -1059,143 +950,136 @@ export default function App() {
                   </div>
                 </div>
               </div>
-
             ) : (
-
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-[700px] lg:col-span-7">
-                <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
-                  <h3 className="font-semibold text-lg text-gray-800 mb-3 flex items-center gap-2"><Users className={`w-5 h-5 ${currentTheme.icon}`} /> รายชื่อสมาชิก</h3>
-                  <div className="relative w-full">
-                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input type="text" placeholder="ค้นหารหัสนศ. หรือ ชื่อ-สกุล..." value={studentSearchQuery} onChange={(e) => setStudentSearchQuery(e.target.value)} className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                  </div>
-                </div>
-                <div className="overflow-y-auto flex-1">
-                  <table className="w-full text-left border-collapse">
-                    <thead className="bg-white sticky top-0 shadow-sm z-10">
-                      <tr className="text-gray-400 text-xs uppercase tracking-wider border-b border-gray-100">
-                        <th className="px-4 py-3 font-medium text-center w-12">ที่</th><th className="px-4 py-3 font-medium w-24">รหัสนศ.</th><th className="px-4 py-3 font-medium">ชื่อ-สกุล</th><th className="px-4 py-3 font-medium text-right">ชำระแล้ว</th><th className="px-4 py-3 font-medium text-right">ค้างชำระ</th>{currentUser && <th className="px-4 py-3 font-medium text-center">จัดการ</th>}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                        {studentsWithSummary?.map((s, idx) => (
-                        <tr key={s.id} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-4 py-4 text-center text-sm text-gray-400">{idx+1}</td><td className="px-4 py-4 text-sm text-gray-500 font-mono">{s.id}</td><td className="px-4 py-4 font-medium text-sm md:text-base">{s.name}</td>
-                          <td className="px-4 py-4 text-right"><span className={`font-bold ${s.totalPaid>0?'text-green-600':'text-gray-300'}`}>฿{s.totalPaid.toLocaleString()}</span></td>
-                          <td className="px-4 py-4 text-right">{s.remainingAmount>0?<span className="font-semibold text-red-500 text-sm">฿{s.remainingAmount.toLocaleString()}</span>:<span className="font-semibold text-emerald-500 text-sm inline-flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> ครบ</span>}</td>
-                          {currentUser && <td className="px-4 py-4 text-center"><button onClick={()=>openRecordModal(s)} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors bg-gray-100 hover:bg-gray-200 ${currentTheme.text} inline-flex items-center gap-1`}><PlusCircle className="w-3.5 h-3.5" /> จ่ายเงิน</button></td>}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-[700px] lg:col-span-5">
-                <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
-                  <div className="flex justify-between items-center mb-3">
-                    <h3 className="font-semibold text-lg text-gray-800 flex items-center gap-2"><Clock className={`w-5 h-5 ${currentTheme.icon}`} /> ประวัติรายการ</h3>
-                    {currentUser && currentUser.role === `admin_${activeTab}` && (
-                      <button onClick={() => { setOtherType('income'); setOtherAmount(''); setOtherDescription(''); setOtherSlip(null); setOtherRecordModalOpen(true); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-900 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"><PlusCircle className="w-3.5 h-3.5" /> รับ/จ่ายอื่น</button>
-                    )}
-                  </div>
-                  <div className="flex gap-2">
-                    <div className="relative flex-1">
+              /* --- แสดงมุมมองกริด (GRID VIEW แบบเดิม) --- */
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-[700px] lg:col-span-7">
+                  <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
+                    <h3 className="font-semibold text-lg text-gray-800 mb-3 flex items-center gap-2"><Users className={`w-5 h-5 ${currentTheme.icon}`} /> รายชื่อสมาชิก</h3>
+                    <div className="relative w-full">
                       <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                      <input type="text" placeholder="ค้นหารายการ..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className={`w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500`} />
-                    </div>
-                    <div className="relative w-1/3 min-w-[110px]">
-                      <Calendar className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                      <input type="date" value={searchDate} onChange={(e) => setSearchDate(e.target.value)} className={`w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 text-gray-600 focus:ring-indigo-500`} />
+                      <input type="text" placeholder="ค้นหารหัสนศ. หรือ ชื่อ-สกุล..." value={studentSearchQuery} onChange={(e) => setStudentSearchQuery(e.target.value)} className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                     </div>
                   </div>
+                  <div className="overflow-y-auto flex-1">
+                    <table className="w-full text-left border-collapse">
+                      <thead className="bg-white sticky top-0 shadow-sm z-10">
+                        <tr className="text-gray-400 text-xs uppercase tracking-wider border-b border-gray-100">
+                          <th className="px-4 py-3 font-medium text-center w-12">ที่</th><th className="px-4 py-3 font-medium w-24">รหัสนศ.</th><th className="px-4 py-3 font-medium">ชื่อ-สกุล</th><th className="px-4 py-3 font-medium text-right">ชำระแล้ว</th><th className="px-4 py-3 font-medium text-right">ค้างชำระ</th>{currentUser && <th className="px-4 py-3 font-medium text-center">จัดการ</th>}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {studentsWithSummary?.map((s, idx) => (
+                          <tr key={s?.id || idx} className="hover:bg-gray-50 transition-colors">
+                            <td className="px-4 py-4 text-center text-sm text-gray-400">{idx+1}</td><td className="px-4 py-4 text-sm text-gray-500 font-mono">{s?.id}</td><td className="px-4 py-4 font-medium text-sm md:text-base">{s?.name}</td>
+                            <td className="px-4 py-4 text-right"><span className={`font-bold ${(s?.totalPaid || 0)>0?'text-green-600':'text-gray-300'}`}>฿{(s?.totalPaid || 0).toLocaleString()}</span></td>
+                            <td className="px-4 py-4 text-right">{(s?.remainingAmount || 0)>0?<span className="font-semibold text-red-500 text-sm">฿{(s?.remainingAmount || 0).toLocaleString()}</span>:<span className="font-semibold text-emerald-500 text-sm inline-flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> ครบ</span>}</td>
+                            {currentUser && <td className="px-4 py-4 text-center"><button onClick={()=>openRecordModal(s)} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors bg-gray-100 hover:bg-gray-200 ${currentTheme.text} inline-flex items-center gap-1`}><PlusCircle className="w-3.5 h-3.5" /> จ่ายเงิน</button></td>}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-                <div className="overflow-y-auto flex-1">
-                  <table className="w-full text-left border-collapse">
-                     <thead className="bg-white sticky top-0 shadow-sm z-10">
-                      <tr className="text-gray-400 text-xs uppercase tracking-wider border-b border-gray-100">
-                        <th className="px-4 py-3 font-medium">เวลา / ผู้บันทึก</th><th className="px-4 py-3 font-medium">รายการ</th><th className="px-4 py-3 font-medium text-right">ยอดเงิน</th>{currentUser && <th className="px-4 py-3 font-medium text-center">จัดการ</th>}
-                      </tr>
-                     </thead>
-                     <tbody className="divide-y divide-gray-50">
-                        {filteredHistory?.map(tx => {
-                          const canEdit = currentUser?.role === `admin_${tx.fundType}`;
-                          const txHistory = tx.history || [];
-                          const editCount = txHistory.filter(h => h.action === 'edit').length;
-                          const latestAction = txHistory.length > 0 ? txHistory[txHistory.length - 1] : { recordedBy: tx.recordedBy, timestamp: tx.timestamp };
-                          return (
-                           <tr key={tx.id} className="hover:bg-gray-50 transition-colors">
-                              <td className="px-4 py-3">
-                                <div className="text-[11px] text-gray-500">{formatDate(latestAction.timestamp)}</div>
-                                <div className={`text-[10px] font-medium mt-0.5 flex items-center gap-1 ${editCount > 0 ? 'text-orange-600' : currentTheme.text}`}><span className={`w-1.5 h-1.5 rounded-full ${editCount > 0 ? 'bg-orange-400' : currentTheme.bgActive.split(' ')[0]}`}></span>{editCount > 0 ? `แก้ครั้งที่ ${editCount} โดย ${latestAction.recordedBy}` : `โดย ${latestAction.recordedBy}`}</div>
-                                <button onClick={() => { setHistoryTx(tx); setHistoryModalOpen(true); }} className={`text-[10px] text-gray-400 hover:${currentTheme.text} flex items-center gap-1 mt-1.5 transition-colors bg-gray-100 px-2 py-0.5 rounded`}><History className="w-3 h-3" /> ประวัติ</button>
-                              </td>
-                              <td className="px-4 py-3">
-                                {tx.type === 'student_payment' ? (
-                                  <>
-                                    <div className="font-medium text-gray-900 text-sm flex items-center gap-1.5 line-clamp-1">
-                                        {tx.studentName}
-                                        
-                                        {/* --- เพิ่มเงื่อนไข ถ้ารอสลิปให้ขึ้นป้ายสีส้ม --- */}
-                                        {tx.status === 'pending' && (
-                                        <span className="text-[9px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-bold ml-1 whitespace-nowrap flex items-center gap-1">
-                                            <AlertCircle className="w-3 h-3"/> รอหลักฐาน
-                                        </span>
-                                        )}
-                                        
-                                        {/* --- ปุ่มดูสลิป โชว์เฉพาะตอนโอนสำเร็จแล้ว --- */}
-                                        {tx.status === 'completed' && tx.slipUrl ? (
-                                        <button onClick={() => { setCurrentSlip(tx.slipUrl); setSlipModalOpen(true); }} className="text-blue-500 hover:text-blue-700 shrink-0 ml-1" title="ดูหลักฐานสลิป"><ImageIcon className="w-4 h-4" /></button>
-                                        ) : null}
-                                    </div>
-                                    <div className="text-[10px] text-gray-500 font-mono mt-0.5">{tx.studentId}</div>
-                                  </>
-                                ) : (
-                                  <>
-                                    <div className="font-medium text-gray-900 text-sm flex items-center gap-1.5 line-clamp-1">
-                                      {tx.description}
-                                      {tx.slipUrl && <button onClick={() => { setCurrentSlip(tx.slipUrl); setSlipModalOpen(true); }} className="text-blue-500 hover:text-blue-700 shrink-0" title="ดูหลักฐานสลิป"><ImageIcon className="w-4 h-4" /></button>}
-                                    </div>
-                                    <div className={`text-[9px] inline-flex px-1.5 py-0.5 rounded font-medium mt-0.5 ${tx.type === 'income' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{tx.type === 'income' ? 'รับสมทบทุน' : 'จ่ายซื้อของ'}</div>
-                                  </>
-                                )}
-                              </td>
-                              <td className="px-4 py-3 text-right">
-                                {/* --- เพิ่มเงื่อนไข tx.status === 'pending' ให้เป็นสีเทาและขีดฆ่า (line-through) --- */}
-                                <span className={`font-bold text-sm ${tx.type === 'expense' ? 'text-red-600' : tx.type === 'income' ? 'text-emerald-600' : tx.status === 'pending' ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
-                                {tx.type === 'expense' ? '-' : tx.type === 'income' ? '+' : ''}฿{tx.amount.toLocaleString()}
-                                </span>
-                            </td>
-                            {currentUser && (
-                                <td className="px-4 py-3 text-center">
-                                {/* --- เพิ่มเงื่อนไข ถ้ารอสลิป ให้โชว์ปุ่มอัปสลิปย้อนหลังสีส้ม --- */}
-                                {tx.status === 'pending' ? (
-                                    verifyingHistoryId === tx.id ? (
-                                    <Loader2 className="w-4 h-4 animate-spin text-gray-400 mx-auto" />
-                                    ) : (
-                                    <label className="cursor-pointer inline-flex items-center gap-1 px-2 py-1.5 bg-orange-50 hover:bg-orange-100 text-orange-600 rounded-lg text-[10px] font-bold transition-colors">
-                                        <Upload className="w-3 h-3" /> อัปสลิป
-                                        <input type="file" accept="image/*" className="hidden" onChange={(e) => handleVerifySlipFromHistory(e, tx)} />
-                                    </label>
-                                    )
-                                ) : canEdit ? (
-                                    <button onClick={() => { setEditingTx(tx); setEditAmount(tx.amount); if (tx.type !== 'student_payment') setEditDescription(tx.description); setEditModalOpen(true); }} className={`p-1.5 text-gray-400 hover:${currentTheme.text} hover:bg-gray-100 rounded-lg transition-colors`}><Edit className="w-4 h-4" /></button>
-                                ) : currentUser.role === 'student' && tx.type === 'student_payment' ? (
-                                    <button onClick={() => { setNotifyTx(tx); setNotifyReason(''); setNotifyModalOpen(true); }} className="p-1.5 text-gray-400 hover:text-yellow-600 hover:bg-yellow-50 rounded-lg transition-colors"><Bell className="w-4 h-4" /></button>
-                                ) : <span className="text-[10px] text-gray-300">-</span>}
+
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-[700px] lg:col-span-5">
+                  <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
+                    <div className="flex justify-between items-center mb-3">
+                      <h3 className="font-semibold text-lg text-gray-800 flex items-center gap-2"><Clock className={`w-5 h-5 ${currentTheme.icon}`} /> ประวัติรายการ</h3>
+                      {currentUser && currentUser.role === `admin_${activeTab}` && (
+                        <button onClick={() => { setOtherType('income'); setOtherAmount(''); setOtherDescription(''); setOtherSlip(null); setOtherRecordModalOpen(true); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-900 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"><PlusCircle className="w-3.5 h-3.5" /> รับ/จ่ายอื่น</button>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <input type="text" placeholder="ค้นหารายการ..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className={`w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500`} />
+                      </div>
+                      <div className="relative w-1/3 min-w-[110px]">
+                        <Calendar className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <input type="date" value={searchDate} onChange={(e) => setSearchDate(e.target.value)} className={`w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 text-gray-600 focus:ring-indigo-500`} />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="overflow-y-auto flex-1">
+                    <table className="w-full text-left border-collapse">
+                       <thead className="bg-white sticky top-0 shadow-sm z-10">
+                        <tr className="text-gray-400 text-xs uppercase tracking-wider border-b border-gray-100">
+                          <th className="px-4 py-3 font-medium">เวลา / ผู้บันทึก</th><th className="px-4 py-3 font-medium">รายการ</th><th className="px-4 py-3 font-medium text-right">ยอดเงิน</th>{currentUser && <th className="px-4 py-3 font-medium text-center">จัดการ</th>}
+                        </tr>
+                       </thead>
+                       <tbody className="divide-y divide-gray-50">
+                          {filteredHistory?.map(tx => {
+                            const canEdit = currentUser?.role === `admin_${tx?.fundType}`;
+                            const txHistory = tx?.history || [];
+                            const editCount = txHistory.filter(h => h?.action === 'edit').length;
+                            const latestAction = txHistory.length > 0 ? txHistory[txHistory.length - 1] : { recordedBy: tx?.recordedBy, timestamp: tx?.timestamp };
+                            return (
+                             <tr key={tx?.id} className="hover:bg-gray-50 transition-colors">
+                                <td className="px-4 py-3">
+                                  <div className="text-[11px] text-gray-500">{formatDate(latestAction.timestamp)}</div>
+                                  <div className={`text-[10px] font-medium mt-0.5 flex items-center gap-1 ${editCount > 0 ? 'text-orange-600' : currentTheme.text}`}><span className={`w-1.5 h-1.5 rounded-full ${editCount > 0 ? 'bg-orange-400' : currentTheme.bgActive.split(' ')[0]}`}></span>{editCount > 0 ? `แก้ครั้งที่ ${editCount} โดย ${latestAction.recordedBy}` : `โดย ${latestAction.recordedBy}`}</div>
+                                  <button onClick={() => { setHistoryTx(tx); setHistoryModalOpen(true); }} className={`text-[10px] text-gray-400 hover:${currentTheme.text} flex items-center gap-1 mt-1.5 transition-colors bg-gray-100 px-2 py-0.5 rounded`}><History className="w-3 h-3" /> ประวัติ</button>
                                 </td>
-                            )}
-                           </tr>
-                          );
-                        })}
-                     </tbody>
-                  </table>
+                                <td className="px-4 py-3">
+                                  {tx?.type === 'student_payment' ? (
+                                    <>
+                                      <div className="font-medium text-gray-900 text-sm flex items-center gap-1.5 line-clamp-1">
+                                        {tx?.studentName}
+                                        {tx?.status === 'pending' && (
+                                          <span className="text-[9px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-bold ml-1 whitespace-nowrap flex items-center gap-1">
+                                            <AlertCircle className="w-3 h-3"/> รอหลักฐาน
+                                          </span>
+                                        )}
+                                        {tx?.status === 'completed' && tx?.slipUrl ? (
+                                          <button onClick={() => { setCurrentSlip(tx.slipUrl); setSlipModalOpen(true); }} className="text-blue-500 hover:text-blue-700 shrink-0 ml-1" title="ดูหลักฐานสลิป"><ImageIcon className="w-4 h-4" /></button>
+                                        ) : null}
+                                      </div>
+                                      <div className="text-[10px] text-gray-500 font-mono mt-0.5">{tx?.studentId}</div>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <div className="font-medium text-gray-900 text-sm flex items-center gap-1.5 line-clamp-1">
+                                        {tx?.description}
+                                        {tx?.slipUrl && <button onClick={() => { setCurrentSlip(tx.slipUrl); setSlipModalOpen(true); }} className="text-blue-500 hover:text-blue-700 shrink-0" title="ดูหลักฐานสลิป"><ImageIcon className="w-4 h-4" /></button>}
+                                      </div>
+                                      <div className={`text-[9px] inline-flex px-1.5 py-0.5 rounded font-medium mt-0.5 ${tx?.type === 'income' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{tx?.type === 'income' ? 'รับสมทบทุน' : 'จ่ายซื้อของ'}</div>
+                                    </>
+                                  )}
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  <span className={`font-bold text-sm ${tx?.type === 'expense' ? 'text-red-600' : tx?.type === 'income' ? 'text-emerald-600' : tx?.status === 'pending' ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
+                                    {tx?.type === 'expense' ? '-' : tx?.type === 'income' ? '+' : ''}฿{(tx?.amount || 0).toLocaleString()}
+                                  </span>
+                                </td>
+                                {currentUser && (
+                                  <td className="px-4 py-3 text-center">
+                                    {tx?.status === 'pending' ? (
+                                       verifyingHistoryId === tx.id ? (
+                                         <Loader2 className="w-4 h-4 animate-spin text-gray-400 mx-auto" />
+                                       ) : (
+                                         <label className="cursor-pointer inline-flex items-center gap-1 px-2 py-1.5 bg-orange-50 hover:bg-orange-100 text-orange-600 rounded-lg text-[10px] font-bold transition-colors">
+                                           <Upload className="w-3 h-3" /> อัปสลิป
+                                           <input type="file" accept="image/*" className="hidden" onChange={(e) => handleVerifySlipFromHistory(e, tx)} />
+                                         </label>
+                                       )
+                                    ) : canEdit ? (
+                                      <button onClick={() => { setEditingTx(tx); setEditAmount(tx.amount); if (tx.type !== 'student_payment') setEditDescription(tx.description); setEditModalOpen(true); }} className={`p-1.5 text-gray-400 hover:${currentTheme.text} hover:bg-gray-100 rounded-lg transition-colors`}><Edit className="w-4 h-4" /></button>
+                                    ) : currentUser.role === 'student' && tx?.type === 'student_payment' ? (
+                                      <button onClick={() => { setNotifyTx(tx); setNotifyReason(''); setNotifyModalOpen(true); }} className="p-1.5 text-gray-400 hover:text-yellow-600 hover:bg-yellow-50 rounded-lg transition-colors"><Bell className="w-4 h-4" /></button>
+                                    ) : <span className="text-[10px] text-gray-300">-</span>}
+                                  </td>
+                                )}
+                             </tr>
+                            );
+                          })}
+                       </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
-            </div>
             )}
-        </div>
+          </div>
         )}
 
         {/* LOGIN VIEW */}
@@ -1220,7 +1104,6 @@ export default function App() {
                    <input type="password" value={password} onChange={(e)=>setPassword(e.target.value)} placeholder="••••••••" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none transition" required/>
                  </div>
                  
-                 {/* --- เพิ่มใหม่: ลิงก์กดสำหรับเปลี่ยนรหัสผ่าน --- */}
                  <div className="flex justify-end items-center mt-2">
                    <button type="button" onClick={() => setCpModalOpen(true)} className="text-sm text-indigo-600 hover:text-indigo-800 font-bold transition-colors">
                      เปลี่ยนรหัสผ่าน?
@@ -1246,26 +1129,23 @@ export default function App() {
            </div>
         )}
 
+        {/* --- MODALS --- */}
+        
         {/* Modal เปลี่ยนรหัสผ่าน */}
         {cpModalOpen && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-2xl p-6 w-full max-w-sm animate-in zoom-in-95 duration-200 shadow-xl flex flex-col">
-              
-              {/* ส่วนหัว */}
               <div className="flex justify-between items-start mb-5">
                 <div className="flex items-center gap-2">
                   <KeyRound className="w-5 h-5 text-indigo-600" />
                   <h3 className="text-lg font-bold text-gray-900">เปลี่ยนรหัสผ่าน</h3>
                 </div>
-                {/* ปุ่มปิด (X) */}
                 <button onClick={() => setCpModalOpen(false)} className="text-gray-400 hover:text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-full p-1 transition"><X className="w-5 h-5" /></button>
               </div>
               
-              {/* แสดงข้อความแจ้งเตือน Error / Success */}
               {cpError && <p className="bg-red-50 text-red-600 p-3 rounded-lg text-sm text-center border border-red-100 mb-4 font-medium">{cpError}</p>}
               {cpSuccess && <p className="bg-green-50 text-green-600 p-3 rounded-lg text-sm text-center border border-green-100 mb-4 font-medium flex items-center gap-2 justify-center"><CheckCircle2 className="w-4 h-4"/> {cpSuccess}</p>}
 
-              {/* ฟอร์มกรอกข้อมูล */}
               <form onSubmit={submitChangePassword} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">รหัสนักศึกษา (Username)</label>
@@ -1279,8 +1159,6 @@ export default function App() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">รหัสผ่านใหม่ (6 ตัวอักษรขึ้นไป)</label>
                   <input type="password" value={cpNewPassword} onChange={(e) => setCpNewPassword(e.target.value)} required placeholder="รหัสผ่านใหม่" minLength="6" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none transition" />
                 </div>
-                
-                {/* ปุ่มกดยืนยัน (ถ้าสำเร็จแล้ว ปุ่มจะกลายเป็นสีเทาและกดไม่ได้) */}
                 <button type="submit" disabled={!!cpSuccess} className={`w-full text-white font-bold py-3 rounded-xl flex justify-center items-center gap-2 shadow-sm transition-colors ${cpSuccess ? 'bg-gray-400' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
                   ยืนยันการเปลี่ยนรหัสผ่าน
                 </button>
@@ -1289,8 +1167,6 @@ export default function App() {
           </div>
         )}
 
-        {/* --- MODALS --- */}
-        
         {/* Payment Modal (QR Code & Processing) */}
         {recordModalOpen && recordTarget && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -1352,38 +1228,28 @@ export default function App() {
                         
                         {qrTimeLeft > 0 ? (
                           <div className="w-full space-y-2 mt-1">
-                            <div className={`flex items-center justify-center gap-2 ${currentTheme.text} mb-2`}>
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                              <span className="font-bold text-sm animate-pulse">รอรับยอดโอน... ({Math.floor(qrTimeLeft / 60)}:{(qrTimeLeft % 60).toString().padStart(2, '0')})</span>
-                            </div>
-                            {/* <button onClick={simulatePaymentReceived} className="w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl border border-gray-200 text-sm transition-colors">(จำลอง API) ได้รับเงินแล้ว</button> */}
-                            {/* เช็คก่อนว่ากำลังตรวจสลิปอยู่ไหม (isVerifying) */}
                             {isVerifying ? (
-                            // ถ้ากำลังตรวจ ให้โชว์ไอคอนหมุนๆ (Loader2)
-                            <div className="flex flex-col items-center justify-center py-4...">
-                                <Loader2 className={`w-8 h-8 animate-spin ...`} />
+                              <div className="flex flex-col items-center justify-center py-4 bg-gray-50 rounded-xl border border-gray-100">
+                                <Loader2 className={`w-8 h-8 animate-spin ${currentTheme.text} mb-2`} />
                                 <span className="font-bold text-sm text-gray-600">กำลังตรวจสอบสลิป...</span>
-                            </div>
+                              </div>
                             ) : (
-                            // ถ้าไม่ได้ตรวจ ให้โชว์ปุ่มอัปโหลดรูป
-                            <>
-                                <label className={`w-full py-2.5 text-white font-bold rounded-xl ... cursor-pointer`}>
-                                <Upload className="w-4 h-4" />
-                                <span>อัปโหลดสลิปเพื่อยืนยัน</span>
-
-                                <input type="file" accept="image/*" onChange={handleVerifySlip} className="hidden" />
+                              <>
+                                <div className={`flex items-center justify-center gap-2 ${currentTheme.text} mb-2`}>
+                                  <Clock className="w-4 h-4" />
+                                  <span className="font-bold text-sm">เมื่อโอนแล้ว กรุณาแนบสลิป ({Math.floor(qrTimeLeft / 60)}:{(qrTimeLeft % 60).toString().padStart(2, '0')})</span>
+                                </div>
+                                <label className={`w-full py-2.5 text-white font-bold rounded-xl text-sm transition-colors cursor-pointer flex justify-center items-center gap-2 shadow-sm ${currentTheme.btnPrimary}`}>
+                                  <Upload className="w-4 h-4" />
+                                  <span>อัปโหลดสลิปเพื่อยืนยัน</span>
+                                  <input type="file" accept="image/*" onChange={handleVerifySlip} className="hidden" />
                                 </label>
-                            </>
+                              </>
                             )}
-                            
-                            <label className={`w-full py-2.5 text-white font-bold rounded-xl text-sm transition-colors cursor-pointer flex justify-center items-center gap-2 shadow-sm ${currentTheme.btnPrimary}`}>
-                            <Upload className="w-4 h-4" />
-                            <span>อัปโหลดสลิปเพื่อยืนยัน</span>
-                            <input type="file" accept="image/*" onChange={handleVerifySlip} className="hidden" />
-                            </label>
                           </div>
                         ) : (
                           <div className="w-full space-y-2 mt-2">
+                            <p className="text-xs text-orange-500 mb-2">รายการถูกบันทึกไว้ในประวัติ สามารถอัปสลิปย้อนหลังได้</p>
                             <button onClick={() => setPaymentStep('input')} className="w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-sm transition-colors">กรอกจำนวนเงินใหม่</button>
                           </div>
                         )}
