@@ -10,7 +10,7 @@ import {
 // นำเข้า (Import) การเชื่อมต่อ Supabase ของจริงเพื่อใช้งานทันที
  import { supabase } from './supabaseClient';
 
- 
+
 const STUDENT_ADMINS = {
   '6720117265': 'admin_room', // รหัสนักศึกษาคนที่เป็นแอดมินเงินห้อง
   '6720117261': 'admin_trip'  // รหัสนักศึกษาคนที่เป็นแอดมินฟิวทริป
@@ -1158,7 +1158,7 @@ export default function App() {
                    </button>
                  </div>
 
-                 <button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-all shadow-sm">เข้าสู่ระบบ</button>
+                 <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-all shadow-sm">เข้าสู่ระบบ</button>
                </form>
 
                {/* กล่องรหัสทดสอบ เพิ่มพื้นหลังให้เด่นขึ้น */}
