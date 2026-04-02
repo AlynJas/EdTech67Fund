@@ -1149,12 +1149,12 @@ export default function App() {
                
                <form onSubmit={handleLogin} className="space-y-5">
                  <div>
-                   <label className="block text-sm font-medium text-gray-700 mb-1">ชื่อผู้ใช้งาน หรือ รหัสนักศึกษา</label>
-                   <input type="text" value={username} onChange={(e)=>setUsername(e.target.value)} placeholder="เช่น admin_room หรือ 65001" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none transition" required/>
+                   <label className="block text-sm font-medium text-gray-700 mb-1">รหัสนักศึกษา</label>
+                   <input type="text" value={username} onChange={(e)=>setUsername(e.target.value)} placeholder="เช 6720117***" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none transition" required/>
                  </div>
                  <div>
                    <label className="block text-sm font-medium text-gray-700 mb-1">รหัสผ่าน (Password)</label>
-                   <input type="password" value={password} onChange={(e)=>setPassword(e.target.value)} placeholder="••••••••" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none transition" required/>
+                   <input type="password" value={password} onChange={(e)=>setPassword(e.target.value)} placeholder="8 ตัวขึ้นไป" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none transition" required/>
                  </div>
                  
                  <div className="flex justify-end items-center mt-2">
