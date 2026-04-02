@@ -569,16 +569,19 @@ export default function App() {
 
   // --- ลอจิกคำนวณตารางไดนามิก (สัปดาห์/วัน) ---
   const studentsWithSummary = filteredStudents.map(student => {
-    
+    // ✅ ดึงกฎการเงินตาม "ชั้นปีของนักศึกษาคนนี้" และ "เทอมที่เลือก"
+    const studentYear = student.year || 1; // ถ้าไม่ได้ระบุ ให้ถือว่าเป็นปี 1
+    const studentRules = getTermConfig(selectedTerm, activeTab, studentYear); 
+
     let totalPaid = 0;
     (currentFundTransactions || []).forEach(tx => {
       const isMatch = String(tx?.studentId).trim() === String(student?.id).trim();
       if (tx?.type === 'student_payment' && tx?.status !== 'pending' && isMatch) {
-        totalPaid += Number(tx?.amount) || 0; 
+        totalPaid += Number(tx?.amount) || 0;
       }
     });
       
-    const targetAmount = rules.target;
+    const targetAmount = studentRules.target;
     const remainingAmount = Math.max(0, targetAmount - totalPaid);
 
     const weeks = [];
@@ -619,7 +622,7 @@ export default function App() {
 
   // --- เป้าหมายรวมแบบไดนามิก ---
   const currentYearInt = parseInt(selectedTerm.split('/')[0]);
-  const expectedStudentCount = currentYearInt === 1 ? 26 : 23;
+  const expectedStudentCount = currentYearInt === 1 ? 24 : 23;
   
   const configRoom = getTermConfig(selectedTerm, 'room');
   const configTrip = getTermConfig(selectedTerm, 'trip');
