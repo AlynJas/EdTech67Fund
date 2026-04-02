@@ -11,11 +11,15 @@ import {
  import { supabase } from './supabaseClient';
 
 // --- ข้อมูลบัญชีแอดมิน ---
-const users = {
-  'admin_room': { password: 'password', role: 'admin_room', name: 'ผู้ดูแลเงินห้อง' },
-  'admin_trip': { password: 'password', role: 'admin_trip', name: 'ผู้ดูแลฟิวทริป' }
+// const users = {
+//   '6720117265': { password: 'password', role: 'admin_room', name: 'ผู้ดูแลเงินห้อง' },
+//   '6720117261': { password: 'password', role: 'admin_trip', name: 'ผู้ดูแลฟิวทริป' }
+// };
+// --- ✅ กำหนดรหัสนักศึกษาที่จะให้เป็นแอดมิน (เปลี่ยนเป็นรหัสจริงได้เลย) ---
+const STUDENT_ADMINS = {
+  '6720117265': 'admin_room', // รหัสนักศึกษาคนที่เป็นแอดมินเงินห้อง
+  '6720117261': 'admin_trip'  // รหัสนักศึกษาคนที่เป็นแอดมินฟิวทริป
 };
-
 
 const TERMS = [
   '1/1', '1/2',
@@ -242,7 +246,8 @@ export default function App() {
     if (!user) {
       const student = students.find(s => String(s?.id).trim() === String(username).trim());
       if (student) {
-        user = { password: student.password || 'password', role: 'student', name: student.name };
+        const assignedRole = student.role || STUDENT_ADMINS[String(student.id).trim()] || 'student';
+        user = { password: student.password || 'password', role: assignedRole, name: student.name };
       }
     }
 
@@ -1166,9 +1171,8 @@ export default function App() {
                  <div className="bg-indigo-50/70 p-4 rounded-xl border border-indigo-100">
                    <p className="text-sm font-bold text-indigo-900 mb-2 flex items-center gap-1.5"><LogIn className="w-4 h-4"/> ข้อมูลบัญชีทดสอบ:</p>
                    <ul className="text-sm text-indigo-800 space-y-1.5 ml-1">
-                     <li><span className="font-semibold w-24 inline-block">ผู้ดูแลเงินห้อง:</span> admin_room <span className="text-indigo-400 mx-1">/</span> password</li>
-                     <li><span className="font-semibold w-24 inline-block">ผู้ดูแลฟิวทริป:</span> admin_trip <span className="text-indigo-400 mx-1">/</span> password</li>
-                     <li><span className="font-semibold w-24 inline-block">นักศึกษา:</span> 65001 ถึง 65007 <span className="text-indigo-400 mx-1">/</span> password</li>
+                     <li><span className="font-semibold w-24 inline-block">นักศึกษา:</span> รหัสนักศึกษา <span className="text-indigo-400 mx-1">/</span> 'password'</li>
+                     <li><span className="text-indigo-400 mx-1">*กรุณาเปลี่ยนรหัสผ่านเพื่อความปลอดภัย และสิทธิ์ของตนเอง</span></li>
                    </ul>
                  </div>
                </div>
