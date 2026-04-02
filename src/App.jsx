@@ -685,7 +685,7 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex justify-between items-center py-4">
             <div className="flex items-center space-x-2">
-              <img src="/Logo.png" style={{width: '30%'}} />
+              <img src="/Logo.png" style={{width: '15%'}} />
               <span className="text-xl font-bold tracking-wide">EdTech<span className="text-indigo-200">Fund67</span></span>
             </div>
             <div className="flex items-center space-x-3 md:space-x-4">
