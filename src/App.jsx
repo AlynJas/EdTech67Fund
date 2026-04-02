@@ -1171,7 +1171,7 @@ export default function App() {
                  <div className="bg-indigo-50/70 p-4 rounded-xl border border-indigo-100">
                    <p className="text-sm font-bold text-indigo-900 mb-2 flex items-center gap-1.5"><LogIn className="w-4 h-4"/> ข้อมูลบัญชีทดสอบ:</p>
                    <ul className="text-sm text-indigo-800 space-y-1.5 ml-1">
-                     <li><span className="font-semibold w-24 inline-block">นักศึกษา:</span>รหัสนักศึกษา <span className="text-indigo-400 mx-1">/</span> 'password'</li>
+                     <li>รหัสนักศึกษา <span className="text-indigo-400 mx-1">/</span> 'password'</li>
                      <li><span className="text-indigo-400 mx-1">*กรุณาเปลี่ยนรหัสผ่านเพื่อความปลอดภัย และสิทธิ์ของตนเอง</span></li>
                    </ul>
                  </div>
