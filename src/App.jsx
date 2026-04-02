@@ -685,8 +685,8 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex justify-between items-center py-4">
             <div className="flex items-center space-x-2">
-              <Wallet className="w-6 h-6 text-indigo-200" />
-              <span className="text-xl font-bold tracking-wide">CS2 Fund<span className="text-indigo-200">Manager</span></span>
+              <link rel="icon" type="image" href="src/img/Logo.png" style={{width: '20%'}} />
+              <span className="text-xl font-bold tracking-wide">EdTech<span className="text-indigo-200">Fund67</span></span>
             </div>
             <div className="flex items-center space-x-3 md:space-x-4">
               <button onClick={() => setCurrentView('overview')} className={`px-3 md:px-4 py-2 rounded-xl transition-all font-medium text-sm md:text-base ${currentView === 'overview' ? 'bg-white/20 shadow-inner text-white' : 'hover:bg-white/10 text-indigo-100'}`}>แดชบอร์ด</button>
