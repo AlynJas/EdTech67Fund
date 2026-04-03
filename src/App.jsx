@@ -23,7 +23,7 @@ const LEFT_STUDENTS = [
 const TERMS = ['1/1', '1/2', '2/1', '2/2', '2/b2', '3/1', '3/b1', '3/2', '3/b2', '4/1', '4/b1', '4/2', '4/b2'];
 
 const formatTermName = (termValue) => {
-  if (!termValue) return '';
+  if (!termValue || typeof termValue !== 'string' || !termValue.includes('/')) return '';
   const [year, term] = termValue.split('/');
   if (term === 'b1') return `ปี ${year} ปิดเทอม 1`;
   if (term === 'b2') return `ปี ${year} ปิดเทอม 2`;
@@ -32,8 +32,11 @@ const formatTermName = (termValue) => {
 
 
 const getTermConfig = (termStr, fundType, studentYear) => {
+  if (!termStr || typeof termStr !== 'string' || !termStr.includes('/')) {
+     return { allowed: false, message: 'ข้อมูลเทอมไม่ถูกต้อง', target: 0, rate: 0, weeks: 0, unit: 'สัปดาห์', minAmount: 0, maxAmount: 0 };
+  }
   const [termYearStr, term] = termStr.split('/');
-  const isBreak = term.startsWith('b');
+  const isBreak = term ? term.startsWith('b') : false;
   const year = studentYear || parseInt(termYearStr) || 1; 
 
   if (fundType === 'room') {
@@ -66,12 +69,28 @@ const getTermConfig = (termStr, fundType, studentYear) => {
 const SESSION_KEY = 'cs2_fund_session';
 const TEN_DAYS_MS = 10 * 24 * 60 * 60 * 1000;
 
+// ✅ ฟังก์ชันช่วยดึงค่าจาก LocalStorage ป้องกันหน้าขาว
+const getSafeStorage = (key, defaultVal) => {
+  try {
+    const val = localStorage.getItem(key);
+    if (val === null || val === 'undefined' || val === 'null' || val === '') return defaultVal;
+    return val;
+  } catch (e) {
+    return defaultVal;
+  }
+};
+
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
-  const [currentView, setCurrentView] = useState(() => localStorage.getItem('cs2_currentView') || 'overview'); 
-  const [activeTab, setActiveTab] = useState(() => localStorage.getItem('cs2_activeTab') || 'room'); 
-  const [selectedTerm, setSelectedTerm] = useState(() => localStorage.getItem('cs2_selectedTerm') || '2/1'); 
-  const [showTableView, setShowTableView] = useState(() => localStorage.getItem('cs2_showTableView') === 'true');
+  
+  // ป้องกันค่าขยะพาแครชหน้าจอขาว
+  const [currentView, setCurrentView] = useState(() => getSafeStorage('cs2_currentView', 'overview')); 
+  const [activeTab, setActiveTab] = useState(() => getSafeStorage('cs2_activeTab', 'room')); 
+  const [selectedTerm, setSelectedTerm] = useState(() => {
+    const term = getSafeStorage('cs2_selectedTerm', '2/1');
+    return term.includes('/') ? term : '2/1';
+  }); 
+  const [showTableView, setShowTableView] = useState(() => getSafeStorage('cs2_showTableView', 'true') === 'true');
 
   const [transactions, setTransactions] = useState([]); 
   const [students, setStudents] = useState([]);
@@ -219,13 +238,13 @@ export default function App() {
     try {
       const trimmedUsername = String(username).trim();
       const safeStudents = Array.isArray(students) ? students : [];
-      const student = safeStudents.find(s => String(s?.id).trim() === trimmedUsername);
+      const student = safeStudents.find(s => String(s?.id || '').trim() === trimmedUsername);
       
       let user = null;
       if (student) {
         const safeAdmins = typeof STUDENT_ADMINS !== 'undefined' ? STUDENT_ADMINS : {};
-        const assignedRole = student.role || safeAdmins[String(student.id).trim()] || 'student';
-        user = { password: student.password || 'password', role: assignedRole, name: student.name };
+        const assignedRole = student?.role || safeAdmins[String(student?.id || '').trim()] || 'student';
+        user = { password: student?.password || 'password', role: assignedRole, name: student?.name };
       }
       
       if (user && user.password === password) {
@@ -255,14 +274,14 @@ export default function App() {
     setCpError('');
     setCpSuccess('');
 
-    const student = students.find(s => String(s?.id).trim() === String(cpUsername).trim());
+    const student = students.find(s => String(s?.id || '').trim() === String(cpUsername).trim());
 
     if (!student) {
       setCpError('ไม่พบชื่อผู้ใช้งาน หรือรหัสนักศึกษานี้ในระบบ');
       return;
     }
 
-    const currentPassword = student.password || 'password';
+    const currentPassword = student?.password || 'password';
     if (currentPassword !== cpOldPassword) {
       setCpError('รหัสผ่านเดิมไม่ถูกต้อง');
       return;
@@ -315,7 +334,8 @@ export default function App() {
     }, 300);
   };
 
-  const rules = getTermConfig(selectedTerm, activeTab, currentUser?.year || parseInt(selectedTerm.split('/')[0]) || 1);
+  const currentYearInt = parseInt(String(selectedTerm).split('/')[0]) || 1;
+  const rules = getTermConfig(selectedTerm, activeTab, currentUser?.year || currentYearInt || 1);
   const parsedAmount = parseFloat(amount) || 0;
   const isAmountValid = rules.allowed && parsedAmount >= rules.minAmount && parsedAmount <= rules.maxAmount && (parsedAmount % rules.rate === 0);
   const calculatedUnits = rules.allowed && isAmountValid ? Number((parsedAmount / rules.rate).toFixed(2)) : 0;
@@ -496,12 +516,12 @@ export default function App() {
     const newAmount = parseFloat(editAmount);
     
     const currentHistory = editingTx.history || [];
-    const historyEntry = { action: 'edit', amount: newAmount, description: editingTx.type !== 'student_payment' ? editDescription : undefined, recordedBy: currentUser.name, timestamp: newTimestamp };
+    const historyEntry = { action: 'edit', amount: newAmount, description: editingTx?.type !== 'student_payment' ? editDescription : undefined, recordedBy: currentUser.name, timestamp: newTimestamp };
     const updatedHistory = [...currentHistory, historyEntry];
 
     const updateData = {
       amount: newAmount,
-      description: editingTx.type !== 'student_payment' ? editDescription : editingTx.description,
+      description: editingTx?.type !== 'student_payment' ? editDescription : editingTx?.description,
       history: updatedHistory
     };
 
@@ -530,44 +550,52 @@ export default function App() {
   };
 
   const markNotificationResolved = (id) => setNotifications((notifications || []).map(n => n?.id === id ? { ...n, status: 'resolved' } : n));
-  const formatDate = (isoString) => new Date(isoString).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
-
-  // --- ลอจิกกรองรายชื่อ 24 vs 23 คนตามชั้นปี ---
-  const currentYearInt = parseInt(selectedTerm.split('/')[0]);
   
-  // สร้าง Array ใหม่เพื่อกรองคนออก
+  // ✅ ระบบจัดการวันที่แบบปลอดภัย ป้องกันพังเวลาเจอข้อมูลขยะ
+  const formatDate = (isoString) => {
+    if (!isoString) return '-';
+    const d = new Date(isoString);
+    return isNaN(d.getTime()) ? '-' : d.toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
+  };
+  const formatJustDate = (isoString) => {
+    if (!isoString) return '-';
+    const d = new Date(isoString);
+    return isNaN(d.getTime()) ? '-' : d.toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  };
+
+  // --- ลอจิกกรองรายชื่อ 24 vs 23 คนตามชั้นปี (ป้องกัน null จาก DB) ---
   let activeStudents = [...students];
   if (currentYearInt >= 2) {
-    // กรองคนที่อยู่ในรายชื่อย้ายออก (LEFT_STUDENTS) ออกไปเมื่อดูข้อมูลปี 2 ขึ้นไป
     activeStudents = students.filter(s => 
-      s.status !== 'inactive' && 
-      s.is_active !== false &&
-      !LEFT_STUDENTS.includes(String(s.id).trim())
+      s?.status !== 'inactive' && 
+      s?.is_active !== false &&
+      !LEFT_STUDENTS.includes(String(s?.id || '').trim())
     );
   }
 
-  // --- ลอจิกคำนวณข้อมูลนักศึกษาสำหรับตาราง (คำนวณจากคนที่ยัง Active เท่านั้น) ---
-  const filteredStudents = activeStudents.filter(s => (s.name || '').includes(studentSearchQuery) || String(s.id).includes(studentSearchQuery));
+  const filteredStudents = activeStudents.filter(s => (s?.name || '').includes(studentSearchQuery) || String(s?.id || '').includes(studentSearchQuery));
 
   const studentsWithSummary = filteredStudents.map(student => {
-    const sYear = student.year || currentYearInt || 1; // ดึงกฎตามชั้นปีของเทอมที่กำลังเปิดดู
+    const sYear = student?.year || currentYearInt || 1; 
     const sRules = getTermConfig(selectedTerm, activeTab, sYear); 
 
     let totalPaid = 0;
     transactions.forEach(tx => {
-      if (tx.fundType === activeTab && tx.term === selectedTerm && tx.status === 'completed' && String(tx.studentId) === String(student.id)) {
-        totalPaid += Number(tx.amount) || 0;
+      if (tx?.fundType === activeTab && tx?.term === selectedTerm && tx?.status === 'completed' && String(tx?.studentId) === String(student?.id)) {
+        totalPaid += Number(tx?.amount) || 0;
       }
     });
       
-    const targetAmount = sRules.target;
+    const targetAmount = sRules.target || 0;
     const remainingAmount = Math.max(0, targetAmount - totalPaid);
 
     const weeks = [];
     const ratePerWeek = Number(sRules.rate) || 10;
     let remaining = totalPaid; 
     
-    for (let i = 1; i <= sRules.weeks; i++) {
+    // ป้องกันกรณี sRules.weeks ไม่มีค่า
+    const totalWeeks = sRules.weeks || 0;
+    for (let i = 1; i <= totalWeeks; i++) {
       if (remaining >= ratePerWeek) {
         weeks.push(ratePerWeek);
         remaining -= ratePerWeek;
@@ -600,17 +628,16 @@ export default function App() {
     return matchName && matchDate;
   });
 
-  const adminNotifications = (notifications || []).filter(n => n?.status === 'pending' && n?.term === selectedTerm && currentUser && ((currentUser.role === 'admin_room' && n?.fundType === 'room') || (currentUser.role === 'admin_trip' && n?.fundType === 'trip')));
+  const adminNotifications = (notifications || []).filter(n => n?.status === 'pending' && n?.term === selectedTerm && currentUser && ((currentUser?.role === 'admin_room' && n?.fundType === 'room') || (currentUser?.role === 'admin_trip' && n?.fundType === 'trip')));
 
   // --- เป้าหมายรวมแบบไดนามิก ---
   const expectedStudentCount = currentYearInt === 1 ? targetCounts.year1 : targetCounts.year2;
   
-  // คำนวณเป้าหมายฐานของเทอมปัจจุบัน
   const configRoom = getTermConfig(selectedTerm, 'room', currentYearInt);
   const configTrip = getTermConfig(selectedTerm, 'trip', currentYearInt);
   
-  const termTargetRoom = configRoom.target * expectedStudentCount;
-  const termTargetTrip = configTrip.target * expectedStudentCount;
+  const termTargetRoom = (configRoom.target || 0) * expectedStudentCount;
+  const termTargetTrip = (configTrip.target || 0) * expectedStudentCount;
   const termTotalTarget = termTargetRoom + termTargetTrip;
 
   const calculateNetTotal = (txs) => (txs || []).filter(tx => tx?.status !== 'pending').reduce((sum, tx) => tx?.type === 'expense' ? sum - (Number(tx?.amount) || 0) : sum + (Number(tx?.amount) || 0), 0);
@@ -620,7 +647,6 @@ export default function App() {
   const totalTripFundOverview = calculateNetTotal(tripTransactions);
   const totalAllFunds = totalRoomFundOverview + totalTripFundOverview;
   
-  // ปรับการคำนวณ % ให้สัมพันธ์กับเป้าหมายใหม่แต่ละเทอม
   const roomPercent = termTargetRoom > 0 ? Math.min((totalRoomFundOverview / termTargetRoom) * 100, 100) : 0;
   const tripPercent = termTargetTrip > 0 ? Math.min((totalTripFundOverview / termTargetTrip) * 100, 100) : 0;
   const totalPercent = termTotalTarget > 0 ? Math.min((totalAllFunds / termTotalTarget) * 100, 100) : 0;
@@ -635,15 +661,22 @@ export default function App() {
     visualPTrip = pTrip;
   }
 
-  // หาจำนวนสัปดาห์มากที่สุดในตารางเพื่อวาดคอลัมน์ (เช่น 18 หรือ 22)
-  const maxWeeksInTable = studentsWithSummary.reduce((max, s) => Math.max(max, s.weeks.length), 0);
+  // ✅ เปลี่ยนจาก maxWeeksInTable ไปใช้กฎตั้งต้นแทน เพื่อบังคับโชว์ตารางเสมอแม้จะยังไม่มีนักศึกษาก็ตาม
   const currentRules = getTermConfig(selectedTerm, activeTab, currentYearInt);
+  const maxWeeksInTable = currentRules.weeks || 0;
   const isDayUnit = currentRules.unit === 'วัน';
 
   const currentTheme = activeTab === 'room' ? { text: 'text-purple-600', bgActive: 'bg-purple-600 text-white shadow-md', bgHover: 'hover:bg-purple-50', icon: 'text-purple-500', badge: 'bg-purple-100 text-purple-800', gradient: 'bg-gradient-to-r from-purple-500 to-fuchsia-500', btnPrimary: 'bg-purple-600 hover:bg-purple-700', lightCard: 'bg-purple-50/50 border-purple-50', donutSlice: '#a855f7' } : { text: 'text-pink-600', bgActive: 'bg-pink-600 text-white shadow-md', bgHover: 'hover:bg-pink-50', icon: 'text-pink-500', badge: 'bg-pink-100 text-pink-800', gradient: 'bg-gradient-to-r from-pink-500 to-rose-400', btnPrimary: 'bg-pink-600 hover:bg-pink-700', lightCard: 'bg-pink-50/50 border-pink-50', donutSlice: '#ec4899' };
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800 font-sans pb-12">
+      {/* ✅ เพิ่ม CSS ลบตาออโต้ของเบราว์เซอร์ */}
+      <style>{`
+        input[type="password"]::-ms-reveal,
+        input[type="password"]::-ms-clear {
+          display: none;
+        }
+      `}</style>
       {/* Navbar */}
       <nav className="bg-gradient-to-r from-indigo-800 via-indigo-600 to-violet-600 text-white shadow-lg sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-4">
@@ -798,15 +831,15 @@ export default function App() {
                 <h3 className="text-yellow-800 font-bold text-lg flex items-center gap-2 mb-4"><Bell className="w-5 h-5" />การแจ้งเตือนขอแก้ไขข้อมูล ({adminNotifications.length} รายการ)</h3>
                 <div className="space-y-3">
                   {adminNotifications.map(notif => (
-                    <div key={notif.id} className="bg-white p-4 rounded-xl border border-yellow-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div key={notif?.id} className="bg-white p-4 rounded-xl border border-yellow-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
                       <div>
-                        <p className="text-sm font-medium text-gray-900">รายการของ: <span className="text-indigo-600">{notif.studentName}</span> <span className="text-gray-500 text-xs ml-2">({formatDate(notif.timestamp)})</span></p>
-                        <p className="text-sm text-gray-600 mt-1 flex items-start gap-1"><MessageSquare className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" /><span><span className="font-semibold text-gray-700">เหตุผล:</span> {notif.reason}</span></p>
-                        <p className="text-xs text-gray-500 mt-1">แจ้งโดย: {notif.notifiedBy} | ยอดเดิม: ฿{notif.originalAmount.toLocaleString()}</p>
+                        <p className="text-sm font-medium text-gray-900">รายการของ: <span className="text-indigo-600">{notif?.studentName}</span> <span className="text-gray-500 text-xs ml-2">({formatDate(notif?.timestamp)})</span></p>
+                        <p className="text-sm text-gray-600 mt-1 flex items-start gap-1"><MessageSquare className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" /><span><span className="font-semibold text-gray-700">เหตุผล:</span> {notif?.reason}</span></p>
+                        <p className="text-xs text-gray-500 mt-1">แจ้งโดย: {notif?.notifiedBy} | ยอดเดิม: ฿{(notif?.originalAmount || 0).toLocaleString()}</p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <button onClick={() => { const txToEdit = transactions.find(t => t.id === notif.txId); if (txToEdit) { setEditingTx(txToEdit); setEditAmount(txToEdit.amount); setEditModalOpen(true); } }} className="px-3 py-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-lg text-sm font-medium transition">แก้ไขรายการนี้</button>
-                        <button onClick={() => markNotificationResolved(notif.id)} className="px-3 py-1.5 bg-green-50 text-green-600 hover:bg-green-100 rounded-lg text-sm font-medium transition flex items-center gap-1"><Check className="w-4 h-4" /> จัดการแล้ว</button>
+                        <button onClick={() => { const txToEdit = transactions.find(t => t?.id === notif?.txId); if (txToEdit) { setEditingTx(txToEdit); setEditAmount(txToEdit?.amount); setEditModalOpen(true); } }} className="px-3 py-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-lg text-sm font-medium transition">แก้ไขรายการนี้</button>
+                        <button onClick={() => markNotificationResolved(notif?.id)} className="px-3 py-1.5 bg-green-50 text-green-600 hover:bg-green-100 rounded-lg text-sm font-medium transition flex items-center gap-1"><Check className="w-4 h-4" /> จัดการแล้ว</button>
                       </div>
                     </div>
                   ))}
@@ -850,8 +883,9 @@ export default function App() {
                     </div>
                   </div>
                   
-                  {maxWeeksInTable === 0 ? (
-                    <div className="p-8 text-center text-gray-500 font-medium bg-gray-50">ไม่มีการเก็บเงินในเทอมนี้</div>
+                  {/* ✅ เปลี่ยนจากการเช็คคนว่าง เป็นการเช็คกฎ เพื่อให้ตารางโชว์เสมอ */}
+                  {!currentRules.allowed ? (
+                    <div className="p-8 text-center text-gray-500 font-medium bg-gray-50">{currentRules.message}</div>
                   ) : (
                     <div className="overflow-x-auto pb-4">
                       <table className="w-full text-sm text-left border-collapse border border-gray-300 whitespace-nowrap">
@@ -877,8 +911,8 @@ export default function App() {
                               <td className="px-4 py-3 text-center border border-gray-300 text-gray-800">{idx + 1}</td>
                               <td className="px-4 py-3 font-mono text-center border border-gray-300 text-gray-800">{s?.id}</td>
                               <td className="px-4 py-3 font-medium border border-gray-300 text-gray-800">{s?.name}</td>
-                              <td className="px-4 py-3 text-center border border-gray-300 font-bold text-indigo-600 bg-indigo-50/30">ปี {s.year || currentYearInt || 1}</td>
-                              <td className="px-4 py-3 text-right border border-gray-300 font-bold text-emerald-600">฿{s.totalPaid.toLocaleString()}</td>
+                              <td className="px-4 py-3 text-center border border-gray-300 font-bold text-indigo-600 bg-indigo-50/30">ปี {s?.year || currentYearInt || 1}</td>
+                              <td className="px-4 py-3 text-right border border-gray-300 font-bold text-emerald-600">฿{(s?.totalPaid || 0).toLocaleString()}</td>
                               
                               {/* วาดช่องตารางตามจำนวนสัปดาห์ */}
                               {Array.from({ length: maxWeeksInTable }).map((_, i) => {
@@ -887,7 +921,7 @@ export default function App() {
                                   <td key={`week-${s?.id || idx}-${i}`} className="px-2 py-3 text-center border border-gray-300 bg-white">
                                     {val > 0 ? (
                                       <span className="font-bold text-emerald-600">{val}</span>
-                                    ) : (i < s.weeks.length ? (
+                                    ) : (i < (s?.weeks?.length || 0) ? (
                                       <span className="text-gray-300 font-medium">-</span>
                                     ) : null)}
                                   </td>
@@ -937,7 +971,7 @@ export default function App() {
                         {filteredOtherTransactions?.length > 0 ? filteredOtherTransactions?.map((tx, idx) => (
                           <tr key={tx?.id || `other-${idx}`} className="hover:bg-gray-50 transition-colors">
                             <td className="px-4 py-2 text-center text-gray-800 border border-gray-300">
-                              {new Date(tx?.timestamp).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                              {formatJustDate(tx?.timestamp)}
                             </td>
                             <td className="px-4 py-2 font-medium text-gray-800 border border-gray-300">{tx?.description}</td>
                             <td className="px-4 py-2 text-center border border-gray-300">
@@ -974,8 +1008,9 @@ export default function App() {
                     </div>
                   </div>
                   <div className="overflow-y-auto flex-1">
-                    {maxWeeksInTable === 0 ? (
-                       <div className="p-8 text-center text-gray-500 font-medium">ไม่มีการเก็บเงินในเทอมนี้</div>
+                    {/* ✅ ปรับลอจิกซ่อนตารางให้ใช้ rules เหมือนด้านบน */}
+                    {!currentRules.allowed ? (
+                       <div className="p-8 text-center text-gray-500 font-medium">{currentRules.message}</div>
                     ) : (
                       <table className="w-full text-left border-collapse">
                         <thead className="bg-white sticky top-0 shadow-sm z-10">
@@ -987,10 +1022,10 @@ export default function App() {
                           {studentsWithSummary?.map((s, idx) => (
                             <tr key={s?.id || idx} className="hover:bg-gray-50 transition-colors">
                               <td className="px-4 py-4 text-center text-sm text-gray-400">{idx+1}</td><td className="px-4 py-4 text-sm text-gray-500 font-mono">{s?.id}</td><td className="px-4 py-4 font-medium text-sm md:text-base">{s?.name}</td>
-                              <td className="px-4 py-4 text-center font-bold text-indigo-600">ปี {s.year || currentYearInt || 1}</td>
+                              <td className="px-4 py-4 text-center font-bold text-indigo-600">ปี {s?.year || currentYearInt || 1}</td>
                               <td className="px-4 py-4 text-right"><span className={`font-bold ${(s?.totalPaid || 0)>0?'text-green-600':'text-gray-300'}`}>฿{(s?.totalPaid || 0).toLocaleString()}</span></td>
-                              <td className="px-4 py-4 text-right">{(s?.remainingAmount || 0)>0 && s.allowed?<span className="font-semibold text-red-500 text-sm">฿{(s?.remainingAmount || 0).toLocaleString()}</span>:(s.allowed?<span className="font-semibold text-emerald-500 text-sm inline-flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> ครบ</span>:<span className="text-sm text-gray-400">-</span>)}</td>
-                              {currentUser && <td className="px-4 py-4 text-center">{s.allowed ? <button onClick={()=>openRecordModal(s)} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors bg-gray-100 hover:bg-gray-200 ${currentTheme.text} inline-flex items-center gap-1`}><PlusCircle className="w-3.5 h-3.5" /> จ่ายเงิน</button> : <span className="text-gray-300 text-xs">-</span>}</td>}
+                              <td className="px-4 py-4 text-right">{(s?.remainingAmount || 0)>0 && s?.allowed?<span className="font-semibold text-red-500 text-sm">฿{(s?.remainingAmount || 0).toLocaleString()}</span>:(s?.allowed?<span className="font-semibold text-emerald-500 text-sm inline-flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> ครบ</span>:<span className="text-sm text-gray-400">-</span>)}</td>
+                              {currentUser && <td className="px-4 py-4 text-center">{s?.allowed ? <button onClick={()=>openRecordModal(s)} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors bg-gray-100 hover:bg-gray-200 ${currentTheme.text} inline-flex items-center gap-1`}><PlusCircle className="w-3.5 h-3.5" /> จ่ายเงิน</button> : <span className="text-gray-300 text-xs">-</span>}</td>}
                             </tr>
                           ))}
                         </tbody>
@@ -1003,7 +1038,7 @@ export default function App() {
                   <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
                     <div className="flex justify-between items-center mb-3">
                       <h3 className="font-semibold text-lg text-gray-800 flex items-center gap-2"><Clock className={`w-5 h-5 ${currentTheme.icon}`} /> ประวัติรายการ</h3>
-                      {currentUser && currentUser.role === `admin_${activeTab}` && (
+                      {currentUser && currentUser?.role === `admin_${activeTab}` && (
                         <button onClick={() => { setOtherType('income'); setOtherAmount(''); setOtherDescription(''); setOtherSlip(null); setOtherRecordModalOpen(true); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-900 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"><PlusCircle className="w-3.5 h-3.5" /> รับ/จ่ายอื่น</button>
                       )}
                     </div>
@@ -1034,8 +1069,9 @@ export default function App() {
                             return (
                              <tr key={tx?.id} className="hover:bg-gray-50 transition-colors">
                                 <td className="px-4 py-3">
-                                  <div className="text-[11px] text-gray-500">{formatDate(latestAction.timestamp)}</div>
-                                  <div className={`text-[10px] font-medium mt-0.5 flex items-center gap-1 ${editCount > 0 ? 'text-orange-600' : currentTheme.text}`}><span className={`w-1.5 h-1.5 rounded-full ${editCount > 0 ? 'bg-orange-400' : currentTheme.bgActive.split(' ')[0]}`}></span>{editCount > 0 ? `แก้ครั้งที่ ${editCount} โดย ${latestAction.recordedBy}` : `โดย ${latestAction.recordedBy}`}</div>
+                                  {/* ✅ ป้องกัน error กรณี timestamp เป็น null */}
+                                  <div className="text-[11px] text-gray-500">{formatDate(latestAction?.timestamp)}</div>
+                                  <div className={`text-[10px] font-medium mt-0.5 flex items-center gap-1 ${editCount > 0 ? 'text-orange-600' : currentTheme.text}`}><span className={`w-1.5 h-1.5 rounded-full ${editCount > 0 ? 'bg-orange-400' : currentTheme.bgActive.split(' ')[0]}`}></span>{editCount > 0 ? `แก้ครั้งที่ ${editCount} โดย ${latestAction?.recordedBy || '-'}` : `โดย ${latestAction?.recordedBy || '-'}`}</div>
                                   <button onClick={() => { setHistoryTx(tx); setHistoryModalOpen(true); }} className={`text-[10px] text-gray-400 hover:${currentTheme.text} flex items-center gap-1 mt-1.5 transition-colors bg-gray-100 px-2 py-0.5 rounded`}><History className="w-3 h-3" /> ประวัติ</button>
                                 </td>
                                 <td className="px-4 py-3">
@@ -1072,7 +1108,7 @@ export default function App() {
                                 {currentUser && (
                                   <td className="px-4 py-3 text-center">
                                     {tx?.status === 'pending' ? (
-                                       verifyingHistoryId === tx.id ? (
+                                       verifyingHistoryId === tx?.id ? (
                                          <Loader2 className="w-4 h-4 animate-spin text-gray-400 mx-auto" />
                                        ) : (
                                          <label className="cursor-pointer inline-flex items-center gap-1 px-2 py-1.5 bg-orange-50 hover:bg-orange-100 text-orange-600 rounded-lg text-[10px] font-bold transition-colors">
@@ -1081,8 +1117,8 @@ export default function App() {
                                          </label>
                                        )
                                     ) : canEdit ? (
-                                      <button onClick={() => { setEditingTx(tx); setEditAmount(tx.amount); if (tx.type !== 'student_payment') setEditDescription(tx.description); setEditModalOpen(true); }} className={`p-1.5 text-gray-400 hover:${currentTheme.text} hover:bg-gray-100 rounded-lg transition-colors`}><Edit className="w-4 h-4" /></button>
-                                    ) : currentUser.role === 'student' && tx?.type === 'student_payment' ? (
+                                      <button onClick={() => { setEditingTx(tx); setEditAmount(tx?.amount); if (tx?.type !== 'student_payment') setEditDescription(tx?.description); setEditModalOpen(true); }} className={`p-1.5 text-gray-400 hover:${currentTheme.text} hover:bg-gray-100 rounded-lg transition-colors`}><Edit className="w-4 h-4" /></button>
+                                    ) : currentUser?.role === 'student' && tx?.type === 'student_payment' ? (
                                       <button onClick={() => { setNotifyTx(tx); setNotifyReason(''); setNotifyModalOpen(true); }} className="p-1.5 text-gray-400 hover:text-yellow-600 hover:bg-yellow-50 rounded-lg transition-colors"><Bell className="w-4 h-4" /></button>
                                     ) : <span className="text-[10px] text-gray-300">-</span>}
                                   </td>
@@ -1356,18 +1392,18 @@ export default function App() {
               <form onSubmit={submitEdit} className="space-y-4 overflow-y-auto">
                 <div className="bg-gray-50 p-3 rounded-lg border border-gray-100 text-sm">
                   <p className="text-gray-500 flex justify-between mb-1">
-                    <span>{editingTx.type === 'student_payment' ? 'ผู้จ่าย:' : 'ประเภท:'}</span> 
+                    <span>{editingTx?.type === 'student_payment' ? 'ผู้จ่าย:' : 'ประเภท:'}</span> 
                     <span className="font-medium text-gray-900">
-                      {editingTx.type === 'student_payment' ? editingTx.studentName : (editingTx.type === 'income' ? 'รายรับสมทบทุน' : 'รายจ่ายซื้อของ')}
+                      {editingTx?.type === 'student_payment' ? editingTx?.studentName : (editingTx?.type === 'income' ? 'รายรับสมทบทุน' : 'รายจ่ายซื้อของ')}
                     </span>
                   </p>
                   <p className="text-gray-500 flex justify-between mb-1">
-                    <span>ส่วน:</span> <span className="font-medium text-gray-900">{editingTx.fundType === 'room' ? 'เงินห้อง' : 'เงินฟิวทริป'} (เทอม {editingTx.term})</span>
+                    <span>ส่วน:</span> <span className="font-medium text-gray-900">{editingTx?.fundType === 'room' ? 'เงินห้อง' : 'เงินฟิวทริป'} (เทอม {editingTx?.term})</span>
                   </p>
-                  <p className="text-gray-500 flex justify-between"><span>เวลาเดิม:</span> <span className="text-xs">{formatDate(editingTx.timestamp)}</span></p>
+                  <p className="text-gray-500 flex justify-between"><span>เวลาเดิม:</span> <span className="text-xs">{formatDate(editingTx?.timestamp)}</span></p>
                 </div>
 
-                {editingTx.type !== 'student_payment' && (
+                {editingTx?.type !== 'student_payment' && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">แก้ไขรายละเอียด</label>
                     <input 
@@ -1416,9 +1452,9 @@ export default function App() {
               </div>
               <form onSubmit={handleNotifySubmit} className="space-y-4 overflow-y-auto">
                 <div className="bg-gray-50 p-3 rounded-lg border border-gray-100 text-sm">
-                  <p className="text-gray-500 flex justify-between mb-1"><span>ผู้จ่าย:</span> <span className="font-medium text-gray-900">{notifyTx.studentName}</span></p>
-                  <p className="text-gray-500 flex justify-between mb-1"><span>ยอดเงิน:</span> <span className="font-medium text-gray-900">฿{notifyTx.amount.toLocaleString()}</span></p>
-                  <p className="text-gray-500 flex justify-between"><span>ส่วน:</span> <span className="font-medium text-gray-900">{notifyTx.fundType === 'room' ? 'เงินห้อง' : 'เงินฟิวทริป'} ({formatTermName(notifyTx.term)})</span></p>
+                  <p className="text-gray-500 flex justify-between mb-1"><span>ผู้จ่าย:</span> <span className="font-medium text-gray-900">{notifyTx?.studentName}</span></p>
+                  <p className="text-gray-500 flex justify-between mb-1"><span>ยอดเงิน:</span> <span className="font-medium text-gray-900">฿{(notifyTx?.amount || 0).toLocaleString()}</span></p>
+                  <p className="text-gray-500 flex justify-between"><span>ส่วน:</span> <span className="font-medium text-gray-900">{notifyTx?.fundType === 'room' ? 'เงินห้อง' : 'เงินฟิวทริป'} ({formatTermName(notifyTx?.term)})</span></p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">เหตุผลที่ขอแก้ไข (หมายเหตุ)</label>
@@ -1457,30 +1493,30 @@ export default function App() {
               <div className="p-6 overflow-y-auto flex-1">
                 <div className="mb-6 pb-4 border-b border-gray-100">
                   <p className="text-sm text-gray-500 mb-1">
-                    {historyTx.type === 'student_payment' ? 'รายการของ:' : 'รายการ:'} <span className="font-semibold text-gray-900">{historyTx.type === 'student_payment' ? historyTx.studentName : historyTx.description}</span>
+                    {historyTx?.type === 'student_payment' ? 'รายการของ:' : 'รายการ:'} <span className="font-semibold text-gray-900">{historyTx?.type === 'student_payment' ? historyTx?.studentName : historyTx?.description}</span>
                   </p>
-                  <p className="text-sm text-gray-500">ส่วน: <span className="font-semibold text-gray-900">{historyTx.fundType === 'room' ? 'เงินห้อง' : 'เงินฟิวทริป'} (เทอม {historyTx.term})</span></p>
+                  <p className="text-sm text-gray-500">ส่วน: <span className="font-semibold text-gray-900">{historyTx?.fundType === 'room' ? 'เงินห้อง' : 'เงินฟิวทริป'} (เทอม {historyTx?.term})</span></p>
                 </div>
                 <div className="space-y-6 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-gray-200 before:to-transparent">
-                  {(historyTx.history || []).map((h, index) => (
+                  {(historyTx?.history || []).map((h, index) => (
                     <div key={index} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
                       <div className={`flex items-center justify-center w-10 h-10 rounded-full border-4 border-white ${currentTheme.lightCard} ${currentTheme.text} shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 relative z-10`}>
-                        {h.action === 'create' ? <PlusCircle className="w-4 h-4" /> : <Edit className="w-4 h-4" />}
+                        {h?.action === 'create' ? <PlusCircle className="w-4 h-4" /> : <Edit className="w-4 h-4" />}
                       </div>
                       <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] bg-white p-4 rounded-xl shadow-sm border border-gray-100">
                         <div className="flex items-center justify-between mb-1">
-                          <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${h.action === 'create' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
-                            {h.action === 'create' ? 'เพิ่มรายการ' : `แก้ไขครั้งที่ ${index}`}
+                          <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${h?.action === 'create' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+                            {h?.action === 'create' ? 'เพิ่มรายการ' : `แก้ไขครั้งที่ ${index}`}
                           </span>
                         </div>
-                        {h.description && h.action === 'edit' && (
-                          <p className="text-xs text-gray-500 mb-1 line-clamp-2">แก้รายละเอียด: {h.description}</p>
+                        {h?.description && h?.action === 'edit' && (
+                          <p className="text-xs text-gray-500 mb-1 line-clamp-2">แก้รายละเอียด: {h?.description}</p>
                         )}
-                        <p className={`text-lg font-bold my-1 ${historyTx.type === 'expense' ? 'text-red-600' : 'text-gray-900'}`}>
-                           {historyTx.type === 'expense' ? '-' : ''}฿{h.amount.toLocaleString()}
+                        <p className={`text-lg font-bold my-1 ${historyTx?.type === 'expense' ? 'text-red-600' : 'text-gray-900'}`}>
+                           {historyTx?.type === 'expense' ? '-' : ''}฿{(h?.amount || 0).toLocaleString()}
                         </p>
-                        <p className="text-sm text-gray-600">โดย: <span className="font-medium text-gray-800">{h.recordedBy}</span></p>
-                        <p className="text-xs text-gray-400 mt-1">{formatDate(h.timestamp)}</p>
+                        <p className="text-sm text-gray-600">โดย: <span className="font-medium text-gray-800">{h?.recordedBy}</span></p>
+                        <p className="text-xs text-gray-400 mt-1">{formatDate(h?.timestamp)}</p>
                       </div>
                     </div>
                   ))}
