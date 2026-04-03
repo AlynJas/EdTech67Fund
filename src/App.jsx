@@ -80,6 +80,14 @@ const getSafeStorage = (key, defaultVal) => {
   }
 };
 
+// ฟังก์ชันแปลงไฟล์รูปภาพเป็น Base64 เพื่อให้บันทึกรูปใน Supabase ได้อย่างถาวรโดยไม่ต้องตั้งค่า Storage Bucket
+const fileToBase64 = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.readAsDataURL(file);
+  reader.onload = () => resolve(reader.result);
+  reader.onerror = error => reject(error);
+});
+
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   
@@ -138,6 +146,7 @@ export default function App() {
   const [otherType, setOtherType] = useState('income');
   const [otherAmount, setOtherAmount] = useState('');
   const [otherDescription, setOtherDescription] = useState('');
+  const [otherPerson, setOtherPerson] = useState(''); // ✅ เพิ่ม state เก็บชื่อผู้รับ/ผู้จ่าย
   const [otherSlip, setOtherSlip] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [notifyModalOpen, setNotifyModalOpen] = useState(false);
@@ -334,7 +343,7 @@ export default function App() {
     }, 300);
   };
 
-  // ✅ ระบบจัดการวันที่แบบปลอดภัย ป้องกันพังเวลาเจอข้อมูลขยะ
+  // ระบบจัดการวันที่แบบปลอดภัย ป้องกันพังเวลาเจอข้อมูลขยะ
   const formatDate = (isoString) => {
     if (!isoString) return '-';
     const d = new Date(isoString);
@@ -348,7 +357,7 @@ export default function App() {
 
   const handleGenerateQR = async (e) => {
     e.preventDefault();
-    if (!currentUser || !recordTarget) return; // ลบ isAmountValid ออกจากการบังคับตรงนี้ก่อน เพราะเราจะคำนวณแยก
+    if (!currentUser || !recordTarget) return; 
 
     // กฎสำหรับการจ่ายเงินของนักศึกษาที่ถูกเลือก
     const targetStudentYear = recordTarget?.year || parseInt(String(selectedTerm).split('/')[0]) || 1;
@@ -414,7 +423,7 @@ export default function App() {
       });
       const result = await response.json();
 
-      // คำนวณ parsedAmount อีกครั้งสำหรับการตรวจสอบ (เผื่อตัวแปร state อัปเดตไม่ทัน)
+
       const currentParsedAmount = parseFloat(amount) || 0;
 
       if (result.success === true && result.data.amount === currentParsedAmount) {
@@ -452,6 +461,10 @@ export default function App() {
     setVerifyingHistoryId(tx.id);
 
     try {
+      // ✅ หากไม่ได้ใช้ SlipOK และอยากอัปสลิปแมนนวลให้แสดงภาพด้วย
+      // เราใช้ fileToBase64 เพื่อเก็บรูปลงฐานข้อมูลโดยตรง
+      const fallbackSlipUrl = await fileToBase64(file);
+
       const formData = new FormData();
       formData.append('files', file);
       const branchId = import.meta.env.VITE_SLIPOK_BRANCH_ID;
@@ -465,7 +478,7 @@ export default function App() {
       const result = await response.json();
 
       if (result.success === true && result.data.amount === tx.amount) {
-        const slipUrl = result.data ? result.data.url : null;
+        const slipUrl = result.data.url || fallbackSlipUrl;
         await supabase.from('transactions').update({ status: 'completed', slip_url: slipUrl }).eq('id', tx.id);
         
         setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, status: 'completed', slipUrl: slipUrl } : t));
@@ -476,35 +489,43 @@ export default function App() {
       }
     } catch (error) {
       console.error("Error:", error);
-      alert('ระบบตรวจสลิปมีปัญหา กรุณาลองใหม่');
+      alert('ระบบตรวจสลิปมีปัญหา หรือไม่มีการตั้งค่า API');
     } finally {
       setVerifyingHistoryId(null);
     }
   };
 
+  // ✅ การอัปสลิปแมนนวล โดยใช้ Base64 เพื่อให้รูปภาพคงอยู่ถาวร
   const handleUploadSlip = async (e, txId) => {
     const file = e.target.files[0];
     if (!file) return;
-    const slipUrl = URL.createObjectURL(file); 
+    const slipUrl = await fileToBase64(file); 
     
-    await supabase.from('transactions').update({ status: 'completed' }).eq('id', txId);
+    await supabase.from('transactions').update({ status: 'completed', slip_url: slipUrl }).eq('id', txId);
     
     setTransactions(prev => prev.map(t => t.id === txId ? { ...t, slipUrl: slipUrl, status: 'completed' } : t));
     setSuccessMsg('แนบสลิปการโอนเงินสำเร็จ!');
     setTimeout(() => setSuccessMsg(''), 3000);
   };
 
+  // ✅ บันทึกรายรับ/รายจ่าย อื่นๆ พร้อมชื่อบุคคล/ร้านค้า และสลิป
   const handleRecordOther = async (e) => {
     e.preventDefault();
     if (!currentUser || !otherAmount || !otherDescription) return;
     const newTimestamp = new Date().toISOString();
-    const slipUrl = otherSlip ? URL.createObjectURL(otherSlip) : null;
+    
+    // แปลงไฟล์รูปเป็น Base64 เพื่อเก็บถาวร
+    let slipUrl = null;
+    if (otherSlip) {
+      slipUrl = await fileToBase64(otherSlip);
+    }
     
     const historyData = [{ action: 'create', amount: parseFloat(otherAmount), description: otherDescription, recordedBy: currentUser.name, timestamp: newTimestamp }];
     
     const newDbTx = {
       type: otherType, 
       description: otherDescription, 
+      student_name: otherPerson, // ✅ เก็บชื่อบุคคลที่เกี่ยวข้องลงในฟิลด์ student_name
       slip_url: slipUrl, 
       fund_type: activeTab,
       term: selectedTerm, 
@@ -518,12 +539,12 @@ export default function App() {
     const { data } = await supabase.from('transactions').insert([newDbTx]).select();
 
     if (data && data.length > 0) {
-      const formattedTx = { ...data[0], fundType: data[0].fund_type, recordedBy: data[0].recorded_by, slipUrl: data[0].slip_url, status: 'completed' };
+      const formattedTx = { ...data[0], studentName: data[0].student_name, fundType: data[0].fund_type, recordedBy: data[0].recorded_by, slipUrl: data[0].slip_url, status: 'completed' };
       setTransactions([formattedTx, ...transactions]);
     }
 
     setSuccessMsg(`บันทึก${otherType === 'income' ? 'รายรับ' : 'รายจ่าย'} สำเร็จ!`);
-    setOtherRecordModalOpen(false); setOtherAmount(''); setOtherDescription(''); setOtherSlip(null);
+    setOtherRecordModalOpen(false); setOtherAmount(''); setOtherDescription(''); setOtherPerson(''); setOtherSlip(null);
     setTimeout(() => setSuccessMsg(''), 3000);
   };
 
@@ -583,12 +604,15 @@ export default function App() {
 
   const filteredStudents = activeStudents.filter(s => (s?.name || '').includes(studentSearchQuery) || String(s?.id || '').includes(studentSearchQuery));
 
-  // ดึงรายการ Transaction ที่ตรงกับเทอม และ แท็บ (Room/Trip) ปัจจุบัน
+  
   const termTransactions = (transactions || []).filter(t => t?.term === selectedTerm);
   const currentFundTransactions = termTransactions.filter(t => t?.fundType === activeTab);
 
-
-  const calculateNetTotal = (txs) => (txs || []).filter(tx => tx?.status !== 'pending').reduce((sum, tx) => tx?.type === 'expense' ? sum - (Number(tx?.amount) || 0) : sum + (Number(tx?.amount) || 0), 0);
+  // ✅ ให้สถานะ success ถูกนับเป็น completed ด้วย เผื่อแอดมินแก้ไข Database เอง
+  const calculateNetTotal = (txs) => (txs || [])
+    .filter(tx => tx?.status === 'completed' || tx?.status === 'success')
+    .reduce((sum, tx) => tx?.type === 'expense' ? sum - (Number(tx?.amount) || 0) : sum + (Number(tx?.amount) || 0), 0);
+  
   const totalActiveFund = calculateNetTotal(currentFundTransactions);
 
   const studentsWithSummary = filteredStudents.map(student => {
@@ -597,7 +621,8 @@ export default function App() {
 
     let totalPaid = 0;
     currentFundTransactions.forEach(tx => {
-      if (tx?.type === 'student_payment' && tx?.status === 'completed' && String(tx?.studentId) === String(student?.id)) {
+      // ✅ เพิ่มเช็คสถานะ success
+      if (tx?.type === 'student_payment' && (tx?.status === 'completed' || tx?.status === 'success') && String(tx?.studentId) === String(student?.id)) {
         totalPaid += Number(tx?.amount) || 0;
       }
     });
@@ -679,7 +704,7 @@ export default function App() {
   const maxWeeksInTable = currentRules.weeks || 0;
   const isDayUnit = currentRules.unit === 'วัน';
 
-  // ✅ กฎและยอดเงินสำหรับการจ่ายเงินของนักศึกษาที่ถูกเลือกในป๊อปอัป
+
   const targetStudentYear = recordTarget?.year || currentYearInt || 1;
   const recordRules = getTermConfig(selectedTerm, activeTab, targetStudentYear);
   const parsedAmount = parseFloat(amount) || 0;
@@ -692,7 +717,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800 font-sans pb-12">
-      {/* ✅ เพิ่ม CSS ลบตาออโต้ของเบราว์เซอร์ */}
+      {/* CSS ลบตาออโต้ของเบราว์เซอร์ */}
       <style>{`
         input[type="password"]::-ms-reveal,
         input[type="password"]::-ms-clear {
@@ -972,7 +997,7 @@ export default function App() {
                         <input type="text" placeholder="ค้นหารายการ..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white" />
                       </div>
                       {currentUser && currentUser.role === `admin_${activeTab}` && (
-                        <button onClick={() => { setOtherType('income'); setOtherAmount(''); setOtherDescription(''); setOtherSlip(null); setOtherRecordModalOpen(true); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"><PlusCircle className="w-3.5 h-3.5" /> เพิ่มรายการ</button>
+                        <button onClick={() => { setOtherType('income'); setOtherAmount(''); setOtherDescription(''); setOtherPerson(''); setOtherSlip(null); setOtherRecordModalOpen(true); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"><PlusCircle className="w-3.5 h-3.5" /> เพิ่มรายการ</button>
                       )}
                     </div>
                   </div>
@@ -994,7 +1019,11 @@ export default function App() {
                             <td className="px-4 py-2 text-center text-gray-800 border border-gray-300">
                               {formatJustDate(tx?.timestamp)}
                             </td>
-                            <td className="px-4 py-2 font-medium text-gray-800 border border-gray-300">{tx?.description}</td>
+                            <td className="px-4 py-2 font-medium text-gray-800 border border-gray-300">
+                              {tx?.description}
+                              {/* ✅ แสดงชื่อผู้รับ/ผู้จ่าย ที่บันทึกไว้ใน studentName */}
+                              {tx?.studentName && <div className="text-xs text-gray-500 mt-0.5">รับ/จ่ายกับ: {tx.studentName}</div>}
+                            </td>
                             <td className="px-4 py-2 text-center border border-gray-300">
                               <span className={`block font-medium ${tx?.type === 'income' ? 'text-gray-800' : 'text-gray-800'}`}>
                                 {tx?.type === 'expense' ? '-' : ''}{tx?.amount}
@@ -1060,7 +1089,7 @@ export default function App() {
                     <div className="flex justify-between items-center mb-3">
                       <h3 className="font-semibold text-lg text-gray-800 flex items-center gap-2"><Clock className={`w-5 h-5 ${currentTheme.icon}`} /> ประวัติรายการ</h3>
                       {currentUser && currentUser?.role === `admin_${activeTab}` && (
-                        <button onClick={() => { setOtherType('income'); setOtherAmount(''); setOtherDescription(''); setOtherSlip(null); setOtherRecordModalOpen(true); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-900 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"><PlusCircle className="w-3.5 h-3.5" /> รับ/จ่ายอื่น</button>
+                        <button onClick={() => { setOtherType('income'); setOtherAmount(''); setOtherDescription(''); setOtherPerson(''); setOtherSlip(null); setOtherRecordModalOpen(true); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-900 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"><PlusCircle className="w-3.5 h-3.5" /> รับ/จ่ายอื่น</button>
                       )}
                     </div>
                     <div className="flex gap-2">
@@ -1087,10 +1116,14 @@ export default function App() {
                             const txHistory = tx?.history || [];
                             const editCount = txHistory.filter(h => h?.action === 'edit').length;
                             const latestAction = txHistory.length > 0 ? txHistory[txHistory.length - 1] : { recordedBy: tx?.recordedBy, timestamp: tx?.timestamp };
+                            
+                            // ✅ ตัวแปรเช็คว่าจ่ายแล้วหรือยัง (รองรับทั้ง completed และ success)
+                            const isPaid = tx?.status === 'completed' || tx?.status === 'success';
+
                             return (
                              <tr key={tx?.id} className="hover:bg-gray-50 transition-colors">
-                                <td className="px-4 py-3">
 
+                                <td className="px-4 py-3">
                                   <div className="text-[11px] text-gray-500">{formatDate(latestAction?.timestamp)}</div>
                                   <div className={`text-[10px] font-medium mt-0.5 flex items-center gap-1 ${editCount > 0 ? 'text-orange-600' : currentTheme.text}`}><span className={`w-1.5 h-1.5 rounded-full ${editCount > 0 ? 'bg-orange-400' : currentTheme.bgActive.split(' ')[0]}`}></span>{editCount > 0 ? `แก้ครั้งที่ ${editCount} โดย ${latestAction?.recordedBy || '-'}` : `โดย ${latestAction?.recordedBy || '-'}`}</div>
                                   <button onClick={() => { setHistoryTx(tx); setHistoryModalOpen(true); }} className={`text-[10px] text-gray-400 hover:${currentTheme.text} flex items-center gap-1 mt-1.5 transition-colors bg-gray-100 px-2 py-0.5 rounded`}><History className="w-3 h-3" /> ประวัติ</button>
@@ -1100,12 +1133,14 @@ export default function App() {
                                     <>
                                       <div className="font-medium text-gray-900 text-sm flex items-center gap-1.5 line-clamp-1">
                                         {tx?.studentName}
-                                        {tx?.status === 'pending' && (
+                                        {/* ถ้ายังเป็น pending (หรือแอดมินยังไม่ได้แก้เป็น success) จะขึ้นรอหลักฐาน */}
+                                        {!isPaid && (
                                           <span className="text-[9px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-bold ml-1 whitespace-nowrap flex items-center gap-1">
                                             <AlertCircle className="w-3 h-3"/> รอหลักฐาน
                                           </span>
                                         )}
-                                        {tx?.status === 'completed' && tx?.slipUrl ? (
+                                        {/* ถ้าชำระแล้ว และมีรูปสลิป ถึงจะโชว์ไอคอนรูปภาพ */}
+                                        {isPaid && tx?.slipUrl ? (
                                           <button onClick={() => { setCurrentSlip(tx.slipUrl); setSlipModalOpen(true); }} className="text-blue-500 hover:text-blue-700 shrink-0 ml-1" title="ดูหลักฐานสลิป"><ImageIcon className="w-4 h-4" /></button>
                                         ) : null}
                                       </div>
@@ -1117,18 +1152,20 @@ export default function App() {
                                         {tx?.description}
                                         {tx?.slipUrl && <button onClick={() => { setCurrentSlip(tx.slipUrl); setSlipModalOpen(true); }} className="text-blue-500 hover:text-blue-700 shrink-0" title="ดูหลักฐานสลิป"><ImageIcon className="w-4 h-4" /></button>}
                                       </div>
+                                      {/* ✅ แสดงชื่อผู้รับ/จ่าย ในตารางประวัติ */}
+                                      {tx?.studentName && <div className="text-[10px] text-gray-500 mt-0.5 truncate">รับ/จ่ายกับ: {tx.studentName}</div>}
                                       <div className={`text-[9px] inline-flex px-1.5 py-0.5 rounded font-medium mt-0.5 ${tx?.type === 'income' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{tx?.type === 'income' ? 'รับสมทบทุน' : 'จ่ายซื้อของ'}</div>
                                     </>
                                   )}
                                 </td>
                                 <td className="px-4 py-3 text-right">
-                                  <span className={`font-bold text-sm ${tx?.type === 'expense' ? 'text-red-600' : tx?.type === 'income' ? 'text-emerald-600' : tx?.status === 'pending' ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
+                                  <span className={`font-bold text-sm ${tx?.type === 'expense' ? 'text-red-600' : tx?.type === 'income' ? 'text-emerald-600' : !isPaid ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
                                     {tx?.type === 'expense' ? '-' : tx?.type === 'income' ? '+' : ''}฿{(tx?.amount || 0).toLocaleString()}
                                   </span>
                                 </td>
                                 {currentUser && (
                                   <td className="px-4 py-3 text-center">
-                                    {tx?.status === 'pending' ? (
+                                    {!isPaid ? (
                                        verifyingHistoryId === tx?.id ? (
                                          <Loader2 className="w-4 h-4 animate-spin text-gray-400 mx-auto" />
                                        ) : (
@@ -1265,112 +1302,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Payment Modal (QR Code & Processing) */}
-        {recordModalOpen && recordTarget && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-2xl w-full max-w-[340px] shadow-2xl overflow-hidden relative flex flex-col max-h-[90vh]">
-              
-              <button onClick={closeRecordModal} className="absolute top-3 right-3 z-10 w-8 h-8 flex items-center justify-center bg-black/20 hover:bg-black/40 text-white rounded-full transition-colors">
-                <X className="w-5 h-5" />
-              </button>
-
-              <div className={`px-6 py-4 pt-5 flex justify-center items-center ${currentTheme.gradient} text-white shrink-0`}>
-                <h3 className="text-lg font-bold">บันทึกชำระเงิน</h3>
-              </div>
-              
-              <div className="p-5 overflow-y-auto">
-                <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 mb-4 flex items-center gap-3">
-                  <div className={`p-2.5 rounded-full ${currentTheme.lightCard}`}><Users className={`w-5 h-5 ${currentTheme.icon}`} /></div>
-                  <div>
-                    <p className="font-bold text-gray-900 leading-tight">{recordTarget.name}</p>
-                    <p className="text-xs text-gray-500 font-mono mt-0.5">รหัส: {recordTarget.id} | {formatTermName(selectedTerm)}</p>
-                  </div>
-                </div>
-
-                {!recordRules.allowed ? (
-                  <div className="bg-red-50 text-red-600 p-4 rounded-xl text-center border border-red-100"><ShieldAlert className="w-8 h-8 mx-auto mb-2" /><p className="font-bold">{recordRules.message}</p></div>
-                ) : (
-                  <>
-                    {paymentStep === 'input' && (
-                      <form onSubmit={handleGenerateQR} className="space-y-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 text-center mb-2">จำนวนเงิน ({recordRules.rate}บ./{recordRules.unit})</label>
-                          <input type="number" value={amount} onChange={(e)=>setAmount(e.target.value)} className={`w-full border ${amount && !isAmountValid ? 'border-red-300 focus:ring-red-500 bg-red-50' : 'border-gray-300 focus:ring-indigo-500 bg-gray-50'} rounded-xl px-4 py-3 text-center text-3xl font-bold outline-none transition`} placeholder={`เช่น ${recordRules.rate}, ${recordRules.rate * 2}, ${recordRules.rate * 3}`} required/>
-                          <div className="mt-2 text-center h-10 flex items-center justify-center">
-                            {amount && !isAmountValid ? (
-                              <p className="text-[11px] font-bold text-red-500 leading-tight">
-                                กรอกตัวเลขให้ถูกต้อง (เพิ่มทีละ {recordRules.rate} เช่น {recordRules.rate}, {recordRules.rate * 2}... )<br/>
-                                ช่วงที่อนุญาต: {recordRules.minAmount} - {recordRules.maxAmount} บาท
-                              </p>
-                            ) : amount && isAmountValid ? (
-                              <p className={`text-sm font-bold ${currentTheme.text}`}>เทียบเท่ากับ: {calculatedUnits} {recordRules.unit}</p>
-                            ) : null}
-                          </div>
-                        </div>
-                        <button disabled={!amount || !isAmountValid} className={`w-full py-3.5 rounded-xl text-white font-bold flex justify-center items-center gap-2 transition-colors ${(!amount || !isAmountValid) ? 'bg-gray-300' : currentTheme.btnPrimary}`}><QrCode className="w-5 h-5" /> สร้าง QR Code</button>
-                      </form>
-                    )}
-
-                    {paymentStep === 'qr' && (
-                      <div className="text-center animate-in fade-in zoom-in duration-300 flex flex-col items-center">
-                        <p className="text-sm font-medium text-gray-500 mb-2">สแกนเพื่อชำระ {activeTab === 'room' ? 'เงินห้อง' : 'เงินฟิวทริป'}</p>
-                        <div className="bg-white p-2 inline-block border-2 border-gray-100 rounded-2xl mb-2 relative">
-                           <img 
-                            src={`https://promptpay.io/1959300030540/${parsedAmount}.png`} 
-                            alt="PromptPay QR"
-                            className={`w-40 h-40 transition-opacity ${qrTimeLeft === 0 ? 'opacity-20' : 'opacity-100'}`}
-                            />
-                           {qrTimeLeft === 0 && <div className="absolute inset-0 flex items-center justify-center"><span className="bg-red-100 text-red-600 px-3 py-1 rounded-full font-bold text-sm">หมดเวลา</span></div>}
-                        </div>
-                        <h3 className="text-2xl font-bold mb-2">฿{parsedAmount}</h3>
-                        
-                        {qrTimeLeft > 0 ? (
-                          <div className="w-full space-y-2 mt-1">
-                            {isVerifying ? (
-                              <div className="flex flex-col items-center justify-center py-4 bg-gray-50 rounded-xl border border-gray-100">
-                                <Loader2 className={`w-8 h-8 animate-spin ${currentTheme.text} mb-2`} />
-                                <span className="font-bold text-sm text-gray-600">กำลังตรวจสอบสลิป...</span>
-                              </div>
-                            ) : (
-                              <>
-                                <div className={`flex items-center justify-center gap-2 ${currentTheme.text} mb-2`}>
-                                  <Clock className="w-4 h-4" />
-                                  <span className="font-bold text-sm">เมื่อโอนแล้ว กรุณาแนบสลิป ({Math.floor(qrTimeLeft / 60)}:{(qrTimeLeft % 60).toString().padStart(2, '0')})</span>
-                                </div>
-                                <label className={`w-full py-2.5 text-white font-bold rounded-xl text-sm transition-colors cursor-pointer flex justify-center items-center gap-2 shadow-sm ${currentTheme.btnPrimary}`}>
-                                  <Upload className="w-4 h-4" />
-                                  <span>อัปโหลดสลิปเพื่อยืนยัน</span>
-                                  <input type="file" accept="image/*" onChange={handleVerifySlip} className="hidden" />
-                                </label>
-                              </>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="w-full space-y-2 mt-2">
-                            <p className="text-xs text-orange-500 mb-2">รายการถูกบันทึกไว้ในประวัติ สามารถอัปสลิปย้อนหลังได้</p>
-                            <button onClick={() => setPaymentStep('input')} className="w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-sm transition-colors">กรอกจำนวนเงินใหม่</button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {paymentStep === 'success' && (
-                      <div className="text-center py-8 animate-in zoom-in duration-300">
-                        <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                          <Check className="w-8 h-8 text-green-500" />
-                        </div>
-                        <h3 className="text-2xl font-bold text-gray-900 mb-1">ได้รับยอดโอนแล้ว!</h3>
-                        <p className="text-xs text-gray-500 mb-4">หน้าต่างจะปิดลงอัตโนมัติ<br/>(แนบสลิปเพิ่มทีหลังได้ในตารางประวัติ)</p>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Other Modals (Edit, Notify, Slip, History, Other Record) */}
+        {/* Modal บันทึกรับจ่ายอื่นๆ */}
         {otherRecordModalOpen && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-2xl p-6 w-full max-w-sm animate-in zoom-in-95 duration-200 shadow-xl flex flex-col max-h-[90vh]">
@@ -1383,7 +1315,11 @@ export default function App() {
                   <button type="button" onClick={() => setOtherType('income')} className={`flex-1 py-2 text-sm font-bold rounded-md flex items-center justify-center gap-1.5 transition-colors ${otherType === 'income' ? 'bg-white shadow text-emerald-600' : 'text-gray-500'}`}><ArrowUpCircle className="w-4 h-4" /> รับเข้า</button>
                   <button type="button" onClick={() => setOtherType('expense')} className={`flex-1 py-2 text-sm font-bold rounded-md flex items-center justify-center gap-1.5 transition-colors ${otherType === 'expense' ? 'bg-white shadow text-red-600' : 'text-gray-500'}`}><ArrowDownCircle className="w-4 h-4" /> จ่ายออก</button>
                 </div>
-                <input type="text" value={otherDescription} onChange={(e) => setOtherDescription(e.target.value)} required placeholder="รายละเอียด" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                <input type="text" value={otherDescription} onChange={(e) => setOtherDescription(e.target.value)} required placeholder="รายละเอียดรายการ" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                
+                {/* ✅ เพิ่มช่องกรอกชื่อคนรับ/คนจ่าย */}
+                <input type="text" value={otherPerson} onChange={(e) => setOtherPerson(e.target.value)} required placeholder="รับ/จ่าย กับใคร (ระบุชื่อคน หรือชื่อร้านค้า)" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                
                 <input type="number" value={otherAmount} onChange={(e) => setOtherAmount(e.target.value)} required placeholder="จำนวนเงิน" min="1" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none" />
                 <div>
                   <label className="flex items-center justify-center gap-2 w-full border-2 border-dashed border-gray-300 rounded-lg px-3 py-3 hover:bg-gray-50 cursor-pointer transition">
