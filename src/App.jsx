@@ -30,7 +30,7 @@ const formatTermName = (termValue) => {
   return `ปี ${year} เทอม ${term}`;
 };
 
-// --- ✅ ปรับ Config กฎการเก็บเงินตามเงื่อนไขใหม่ ป้องกันหน้าขาวล้วน ---
+// --- ปรับ Config กฎการเก็บเงินตามเงื่อนไขใหม่ ป้องกันหน้าขาวล้วน ---
 const getTermConfig = (termStr, fundType, studentYear) => {
   if (!termStr || typeof termStr !== 'string' || !termStr.includes('/')) {
      return { allowed: false, message: 'ข้อมูลเทอมไม่ถูกต้อง', target: 0, rate: 0, weeks: 0, unit: 'สัปดาห์', minAmount: 0, maxAmount: 0 };
@@ -69,7 +69,7 @@ const getTermConfig = (termStr, fundType, studentYear) => {
 const SESSION_KEY = 'cs2_fund_session';
 const TEN_DAYS_MS = 10 * 24 * 60 * 60 * 1000;
 
-// ✅ ฟังก์ชันช่วยดึงค่าจาก LocalStorage ป้องกันหน้าขาว
+// ฟังก์ชันช่วยดึงค่าจาก LocalStorage ป้องกันหน้าขาว
 const getSafeStorage = (key, defaultVal) => {
   try {
     const val = localStorage.getItem(key);
@@ -348,7 +348,16 @@ export default function App() {
 
   const handleGenerateQR = async (e) => {
     e.preventDefault();
-    if (!currentUser || !recordTarget || !isAmountValid) return;
+    if (!currentUser || !recordTarget) return; // ลบ isAmountValid ออกจากการบังคับตรงนี้ก่อน เพราะเราจะคำนวณแยก
+
+    // กฎสำหรับการจ่ายเงินของนักศึกษาที่ถูกเลือก
+    const targetStudentYear = recordTarget?.year || parseInt(String(selectedTerm).split('/')[0]) || 1;
+    const recordRules = getTermConfig(selectedTerm, activeTab, targetStudentYear);
+    
+    const parsedAmount = parseFloat(amount) || 0;
+    const isAmountValid = recordRules.allowed && parsedAmount >= recordRules.minAmount && parsedAmount <= recordRules.maxAmount && (parsedAmount % recordRules.rate === 0);
+
+    if (!isAmountValid) return;
 
     setPaymentStep('qr');
     setQrTimeLeft(660); 
@@ -405,7 +414,10 @@ export default function App() {
       });
       const result = await response.json();
 
-      if (result.success === true && result.data.amount === parsedAmount) {
+      // คำนวณ parsedAmount อีกครั้งสำหรับการตรวจสอบ (เผื่อตัวแปร state อัปเดตไม่ทัน)
+      const currentParsedAmount = parseFloat(amount) || 0;
+
+      if (result.success === true && result.data.amount === currentParsedAmount) {
         setPaymentStep('success'); 
         
         const slipUrl = result.data ? result.data.url : null;
@@ -413,7 +425,7 @@ export default function App() {
 
         setTransactions(prev => prev.map(t => t.id === pendingTxId ? { ...t, status: 'completed', slipUrl: slipUrl } : t));
 
-        setSuccessMsg(`โอนเงินสำเร็จ! บันทึกยอด ฿${parsedAmount} ให้ ${recordTarget.name} แล้ว`);
+        setSuccessMsg(`โอนเงินสำเร็จ! บันทึกยอด ฿${currentParsedAmount} ให้ ${recordTarget?.name || ''} แล้ว`);
 
         paymentTimeoutRef.current = setTimeout(() => {
           closeRecordModal();
@@ -421,7 +433,7 @@ export default function App() {
         }, 2000); 
 
       } else {
-        alert(`สลิปไม่ถูกต้อง หรือ ยอดเงินไม่ตรง!\nกรุณาตรวจสอบสลิปอีกครั้ง (ต้องการยอด ฿${parsedAmount})`);
+        alert(`สลิปไม่ถูกต้อง หรือ ยอดเงินไม่ตรง!\nกรุณาตรวจสอบสลิปอีกครั้ง (ต้องการยอด ฿${currentParsedAmount})`);
         setPaymentStep('qr');
       }
     } catch (error) {
@@ -557,7 +569,7 @@ export default function App() {
 
   const markNotificationResolved = (id) => setNotifications((notifications || []).map(n => n?.id === id ? { ...n, status: 'resolved' } : n));
 
-  // --- ลอจิกกรองข้อมูล (รวมถึงตัวแปร totalActiveFund ที่แก้ไขแล้ว) ---
+  // --- ลอจิกกรองข้อมูล ---
   const currentYearInt = parseInt(String(selectedTerm).split('/')[0]) || 1;
   
   let activeStudents = [...students];
@@ -575,7 +587,7 @@ export default function App() {
   const termTransactions = (transactions || []).filter(t => t?.term === selectedTerm);
   const currentFundTransactions = termTransactions.filter(t => t?.fundType === activeTab);
 
-  // ✅ กู้คืนฟังก์ชันการคำนวณยอดเงินรวม (calculateNetTotal) และตัวแปร totalActiveFund
+
   const calculateNetTotal = (txs) => (txs || []).filter(tx => tx?.status !== 'pending').reduce((sum, tx) => tx?.type === 'expense' ? sum - (Number(tx?.amount) || 0) : sum + (Number(tx?.amount) || 0), 0);
   const totalActiveFund = calculateNetTotal(currentFundTransactions);
 
@@ -597,7 +609,6 @@ export default function App() {
     const ratePerWeek = Number(sRules.rate) || 10;
     let remaining = totalPaid; 
     
-
     const totalWeeks = sRules.weeks || 0;
     for (let i = 1; i <= totalWeeks; i++) {
       if (remaining >= ratePerWeek) {
@@ -668,9 +679,12 @@ export default function App() {
   const maxWeeksInTable = currentRules.weeks || 0;
   const isDayUnit = currentRules.unit === 'วัน';
 
+  // ✅ กฎและยอดเงินสำหรับการจ่ายเงินของนักศึกษาที่ถูกเลือกในป๊อปอัป
+  const targetStudentYear = recordTarget?.year || currentYearInt || 1;
+  const recordRules = getTermConfig(selectedTerm, activeTab, targetStudentYear);
   const parsedAmount = parseFloat(amount) || 0;
-  const isAmountValid = currentRules.allowed && parsedAmount >= currentRules.minAmount && parsedAmount <= currentRules.maxAmount && (parsedAmount % currentRules.rate === 0);
-  const calculatedUnits = currentRules.allowed && isAmountValid ? Number((parsedAmount / currentRules.rate).toFixed(2)) : 0;
+  const isAmountValid = recordRules.allowed && parsedAmount >= recordRules.minAmount && parsedAmount <= recordRules.maxAmount && (parsedAmount % recordRules.rate === 0);
+  const calculatedUnits = recordRules.allowed && isAmountValid ? Number((parsedAmount / recordRules.rate).toFixed(2)) : 0;
 
   const themeRoom = { text: 'text-purple-600', bgActive: 'bg-purple-600 text-white shadow-md', bgHover: 'hover:bg-purple-50', icon: 'text-purple-500', badge: 'bg-purple-100 text-purple-800', gradient: 'bg-gradient-to-r from-purple-500 to-fuchsia-500', btnPrimary: 'bg-purple-600 hover:bg-purple-700', lightCard: 'bg-purple-50/50 border-purple-50', donutSlice: '#a855f7' };
   const themeTrip = { text: 'text-pink-600', bgActive: 'bg-pink-600 text-white shadow-md', bgHover: 'hover:bg-pink-50', icon: 'text-pink-500', badge: 'bg-pink-100 text-pink-800', gradient: 'bg-gradient-to-r from-pink-500 to-rose-400', btnPrimary: 'bg-pink-600 hover:bg-pink-700', lightCard: 'bg-pink-50/50 border-pink-50', donutSlice: '#ec4899' };
@@ -891,7 +905,6 @@ export default function App() {
                     </div>
                   </div>
                   
-
                   {!currentRules.allowed ? (
                     <div className="p-8 text-center text-gray-500 font-medium bg-gray-50">{currentRules.message}</div>
                   ) : (
@@ -1077,7 +1090,7 @@ export default function App() {
                             return (
                              <tr key={tx?.id} className="hover:bg-gray-50 transition-colors">
                                 <td className="px-4 py-3">
-                                  
+
                                   <div className="text-[11px] text-gray-500">{formatDate(latestAction?.timestamp)}</div>
                                   <div className={`text-[10px] font-medium mt-0.5 flex items-center gap-1 ${editCount > 0 ? 'text-orange-600' : currentTheme.text}`}><span className={`w-1.5 h-1.5 rounded-full ${editCount > 0 ? 'bg-orange-400' : currentTheme.bgActive.split(' ')[0]}`}></span>{editCount > 0 ? `แก้ครั้งที่ ${editCount} โดย ${latestAction?.recordedBy || '-'}` : `โดย ${latestAction?.recordedBy || '-'}`}</div>
                                   <button onClick={() => { setHistoryTx(tx); setHistoryModalOpen(true); }} className={`text-[10px] text-gray-400 hover:${currentTheme.text} flex items-center gap-1 mt-1.5 transition-colors bg-gray-100 px-2 py-0.5 rounded`}><History className="w-3 h-3" /> ประวัติ</button>
@@ -1274,23 +1287,23 @@ export default function App() {
                   </div>
                 </div>
 
-                {!rules.allowed ? (
-                  <div className="bg-red-50 text-red-600 p-4 rounded-xl text-center border border-red-100"><ShieldAlert className="w-8 h-8 mx-auto mb-2" /><p className="font-bold">{rules.message}</p></div>
+                {!recordRules.allowed ? (
+                  <div className="bg-red-50 text-red-600 p-4 rounded-xl text-center border border-red-100"><ShieldAlert className="w-8 h-8 mx-auto mb-2" /><p className="font-bold">{recordRules.message}</p></div>
                 ) : (
                   <>
                     {paymentStep === 'input' && (
                       <form onSubmit={handleGenerateQR} className="space-y-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 text-center mb-2">จำนวนเงิน ({rules.rate}บ./{rules.unit})</label>
-                          <input type="number" value={amount} onChange={(e)=>setAmount(e.target.value)} className={`w-full border ${amount && !isAmountValid ? 'border-red-300 focus:ring-red-500 bg-red-50' : 'border-gray-300 focus:ring-indigo-500 bg-gray-50'} rounded-xl px-4 py-3 text-center text-3xl font-bold outline-none transition`} placeholder={`เช่น ${rules.rate}, ${rules.rate * 2}, ${rules.rate * 3}`} required/>
+                          <label className="block text-sm font-medium text-gray-700 text-center mb-2">จำนวนเงิน ({recordRules.rate}บ./{recordRules.unit})</label>
+                          <input type="number" value={amount} onChange={(e)=>setAmount(e.target.value)} className={`w-full border ${amount && !isAmountValid ? 'border-red-300 focus:ring-red-500 bg-red-50' : 'border-gray-300 focus:ring-indigo-500 bg-gray-50'} rounded-xl px-4 py-3 text-center text-3xl font-bold outline-none transition`} placeholder={`เช่น ${recordRules.rate}, ${recordRules.rate * 2}, ${recordRules.rate * 3}`} required/>
                           <div className="mt-2 text-center h-10 flex items-center justify-center">
                             {amount && !isAmountValid ? (
                               <p className="text-[11px] font-bold text-red-500 leading-tight">
-                                กรอกตัวเลขให้ถูกต้อง (เพิ่มทีละ {rules.rate} เช่น {rules.rate}, {rules.rate * 2}... )<br/>
-                                ช่วงที่อนุญาต: {rules.minAmount} - {rules.maxAmount} บาท
+                                กรอกตัวเลขให้ถูกต้อง (เพิ่มทีละ {recordRules.rate} เช่น {recordRules.rate}, {recordRules.rate * 2}... )<br/>
+                                ช่วงที่อนุญาต: {recordRules.minAmount} - {recordRules.maxAmount} บาท
                               </p>
                             ) : amount && isAmountValid ? (
-                              <p className={`text-sm font-bold ${currentTheme.text}`}>เทียบเท่ากับ: {calculatedUnits} {rules.unit}</p>
+                              <p className={`text-sm font-bold ${currentTheme.text}`}>เทียบเท่ากับ: {calculatedUnits} {recordRules.unit}</p>
                             ) : null}
                           </div>
                         </div>
