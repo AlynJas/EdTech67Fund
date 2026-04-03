@@ -5,7 +5,7 @@ import {
   X, Bell, MessageSquare, Check, History, Target, PieChart, 
   ArrowUpCircle, ArrowDownCircle, FileText, Image as ImageIcon, 
   BookOpen, QrCode, Loader2, Upload, AlertCircle, KeyRound, Table, LayoutList,
-  Eye, EyeOff, themeRoom
+  Eye, EyeOff
 } from 'lucide-react';
 
 import { supabase } from './supabaseClient';
@@ -666,7 +666,9 @@ export default function App() {
   const maxWeeksInTable = currentRules.weeks || 0;
   const isDayUnit = currentRules.unit === 'วัน';
 
-  const currentTheme = activeTab === 'room' ? { text: 'text-purple-600', bgActive: 'bg-purple-600 text-white shadow-md', bgHover: 'hover:bg-purple-50', icon: 'text-purple-500', badge: 'bg-purple-100 text-purple-800', gradient: 'bg-gradient-to-r from-purple-500 to-fuchsia-500', btnPrimary: 'bg-purple-600 hover:bg-purple-700', lightCard: 'bg-purple-50/50 border-purple-50', donutSlice: '#a855f7' } : { text: 'text-pink-600', bgActive: 'bg-pink-600 text-white shadow-md', bgHover: 'hover:bg-pink-50', icon: 'text-pink-500', badge: 'bg-pink-100 text-pink-800', gradient: 'bg-gradient-to-r from-pink-500 to-rose-400', btnPrimary: 'bg-pink-600 hover:bg-pink-700', lightCard: 'bg-pink-50/50 border-pink-50', donutSlice: '#ec4899' };
+  const themeRoom = { text: 'text-purple-600', bgActive: 'bg-purple-600 text-white shadow-md', bgHover: 'hover:bg-purple-50', icon: 'text-purple-500', badge: 'bg-purple-100 text-purple-800', gradient: 'bg-gradient-to-r from-purple-500 to-fuchsia-500', btnPrimary: 'bg-purple-600 hover:bg-purple-700', lightCard: 'bg-purple-50/50 border-purple-50', donutSlice: '#a855f7' };
+  const themeTrip = { text: 'text-pink-600', bgActive: 'bg-pink-600 text-white shadow-md', bgHover: 'hover:bg-pink-50', icon: 'text-pink-500', badge: 'bg-pink-100 text-pink-800', gradient: 'bg-gradient-to-r from-pink-500 to-rose-400', btnPrimary: 'bg-pink-600 hover:bg-pink-700', lightCard: 'bg-pink-50/50 border-pink-50', donutSlice: '#ec4899' };
+  const currentTheme = activeTab === 'room' ? themeRoom : themeTrip;
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800 font-sans pb-12">
