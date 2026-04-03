@@ -343,7 +343,7 @@ export default function App() {
     }, 300);
   };
 
-  // ✅ ระบบจัดการวันที่แบบปลอดภัย ป้องกันพังเวลาเจอข้อมูลขยะ
+  // ระบบจัดการวันที่แบบปลอดภัย ป้องกันพังเวลาเจอข้อมูลขยะ
   const formatDate = (isoString) => {
     if (!isoString) return '-';
     const d = new Date(isoString);
@@ -477,7 +477,7 @@ export default function App() {
     }
   };
 
-  // การอัปสลิปแมนนวล โดยใช้ Base64 เพื่อให้รูปภาพคงอยู่ถาวร
+  // ✅ การอัปสลิปแมนนวล โดยใช้ Base64 เพื่อให้รูปภาพคงอยู่ถาวร
   const handleUploadSlip = async (e, txId) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -490,7 +490,7 @@ export default function App() {
     setTimeout(() => setSuccessMsg(''), 3000);
   };
 
-  // บันทึกรายรับ/รายจ่าย อื่นๆ พร้อมชื่อบุคคล/ร้านค้า และสลิป
+  // ✅ บันทึกรายรับ/รายจ่าย อื่นๆ พร้อมชื่อบุคคล/ร้านค้า และสลิป
   const handleRecordOther = async (e) => {
     e.preventDefault();
     if (!currentUser || !otherAmount || !otherDescription) return;
@@ -507,7 +507,7 @@ export default function App() {
     const newDbTx = {
       type: otherType, 
       description: otherDescription, 
-      student_name: otherPerson, // เก็บชื่อบุคคลที่เกี่ยวข้องลงในฟิลด์ student_name
+      student_name: otherPerson, // ✅ เก็บชื่อบุคคลที่เกี่ยวข้องลงในฟิลด์ student_name
       slip_url: slipUrl, 
       fund_type: activeTab,
       term: selectedTerm, 
@@ -586,6 +586,19 @@ export default function App() {
 
   const filteredStudents = activeStudents.filter(s => (s?.name || '').includes(studentSearchQuery) || String(s?.id || '').includes(studentSearchQuery));
 
+  // การคำนวณยอดเงินสะสม (Grand Total) ทุกปีการศึกษา
+  const calculateGrandTotal = (txs, fundType) => {
+    return (txs || [])
+      .filter(tx => (tx?.status === 'completed' || tx?.status === 'success') && (!fundType || tx?.fundType === fundType))
+      .reduce((sum, tx) => tx?.type === 'expense' ? sum - (Number(tx?.amount) || 0) : sum + (Number(tx?.amount) || 0), 0);
+  };
+
+  const grandTotalRoom = calculateGrandTotal(transactions, 'room');
+  const grandTotalTrip = calculateGrandTotal(transactions, 'trip');
+  const grandTotalAll = grandTotalRoom + grandTotalTrip;
+
+
+  // ดึงรายการ Transaction ที่ตรงกับเทอม และ แท็บ (Room/Trip) ปัจจุบัน
   const termTransactions = (transactions || []).filter(t => t?.term === selectedTerm);
   const currentFundTransactions = termTransactions.filter(t => t?.fundType === activeTab);
 
@@ -763,39 +776,69 @@ export default function App() {
         
         {/* OVERVIEW DASHBOARD */}
         {currentView === 'overview' && (
-          <div className="space-y-6 animate-in fade-in duration-500">
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="text-xl md:text-2xl font-bold text-gray-800 flex items-center gap-2">
-                <LayoutDashboard className="text-indigo-600" /> ภาพรวมกองทุน ({formatTermName(selectedTerm)})
-              </h2>
+          <div className="space-y-8 animate-in fade-in duration-500">
+            
+            {/* --- ส่วนที่ 1: ยอดเงินสะสมรวม (ทุกปีการศึกษา/ทุกเทอม) --- */}
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl md:text-2xl font-bold text-gray-800 flex items-center gap-2">
+                  <Wallet className="text-indigo-600 w-6 h-6" /> ยอดเงินสะสมสุทธิ (ทุกปีการศึกษา)
+                </h2>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-2xl shadow-md p-6 text-white relative overflow-hidden">
+                   <div className="absolute -right-4 -top-4 w-32 h-32 bg-white/10 rounded-full z-0"></div>
+                   <p className="text-indigo-100 font-medium mb-1 relative z-10 flex items-center gap-2"><LayoutDashboard className="w-4 h-4"/> ยอดรวมทั้งสิ้น</p>
+                   <h3 className="text-4xl font-bold relative z-10">฿{grandTotalAll.toLocaleString()}</h3>
+                </div>
+                <div className="bg-gradient-to-br from-purple-500 to-purple-700 rounded-2xl shadow-md p-6 text-white relative overflow-hidden">
+                   <div className="absolute -right-4 -top-4 w-32 h-32 bg-white/10 rounded-full z-0"></div>
+                   <p className="text-purple-100 font-medium mb-1 relative z-10 flex items-center gap-2"><Users className="w-4 h-4"/> เงินห้องสะสม</p>
+                   <h3 className="text-4xl font-bold relative z-10">฿{grandTotalRoom.toLocaleString()}</h3>
+                </div>
+                <div className="bg-gradient-to-br from-pink-500 to-pink-700 rounded-2xl shadow-md p-6 text-white relative overflow-hidden">
+                   <div className="absolute -right-4 -top-4 w-32 h-32 bg-white/10 rounded-full z-0"></div>
+                   <p className="text-pink-100 font-medium mb-1 relative z-10 flex items-center gap-2"><Wallet className="w-4 h-4"/> เงินฟิวทริปสะสม</p>
+                   <h3 className="text-4xl font-bold relative z-10">฿{grandTotalTrip.toLocaleString()}</h3>
+                </div>
+              </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col justify-center relative overflow-hidden">
-                <div className="absolute -right-4 -top-4 w-24 h-24 bg-indigo-50 rounded-full z-0 opacity-50"></div>
-                <p className="text-sm font-medium text-gray-500 mb-1 flex items-center gap-2 relative z-10"><Wallet className="w-4 h-4 text-indigo-500"/> ยอดรวมทั้งหมด</p>
-                <h3 className="text-3xl font-bold text-gray-900 relative z-10">฿{totalAllFunds.toLocaleString()}</h3>
+
+            {/* --- ส่วนที่ 2: ข้อมูลประจำเทอม --- */}
+            <div className="pt-6 border-t border-gray-200">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl md:text-2xl font-bold text-gray-800 flex items-center gap-2">
+                  <Target className="text-indigo-600 w-6 h-6" /> เป้าหมายประจำเทอม ({formatTermName(selectedTerm)})
+                </h2>
               </div>
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col justify-center relative overflow-hidden">
-                <div className="absolute -right-4 -top-4 w-24 h-24 bg-purple-50 rounded-full z-0 opacity-50"></div>
-                <p className="text-sm font-medium text-gray-500 mb-1 flex items-center gap-2 relative z-10"><Users className="w-4 h-4 text-purple-500"/> ยอดรวมเงินห้อง</p>
-                <h3 className="text-3xl font-bold text-gray-900 relative z-10">฿{totalRoomFundOverview.toLocaleString()}</h3>
-              </div>
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col justify-center relative overflow-hidden">
-                <div className="absolute -right-4 -top-4 w-24 h-24 bg-pink-50 rounded-full z-0 opacity-50"></div>
-                <p className="text-sm font-medium text-gray-500 mb-1 flex items-center gap-2 relative z-10"><Wallet className="w-4 h-4 text-pink-500"/> ยอดรวมฟิวทริป</p>
-                <h3 className="text-3xl font-bold text-gray-900 relative z-10">฿{totalTripFundOverview.toLocaleString()}</h3>
-              </div>
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col justify-center relative overflow-hidden">
-                <div className="absolute -right-4 -top-4 w-24 h-24 bg-gray-50 rounded-full z-0 opacity-50"></div>
-                <p className="text-sm font-medium text-gray-500 mb-1 flex items-center gap-2 relative z-10"><Users className="w-4 h-4 text-gray-500"/> จำนวนสมาชิกเป้าหมาย</p>
-                <h3 className="text-3xl font-bold text-gray-900 relative z-10">{expectedStudentCount} <span className="text-base font-normal text-gray-500">คน</span></h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col justify-center relative overflow-hidden">
+                  <div className="absolute -right-4 -top-4 w-24 h-24 bg-indigo-50 rounded-full z-0 opacity-50"></div>
+                  <p className="text-sm font-medium text-gray-500 mb-1 flex items-center gap-2 relative z-10"><Wallet className="w-4 h-4 text-indigo-500"/> เก็บได้เทอมนี้ (รวม)</p>
+                  <h3 className="text-3xl font-bold text-gray-900 relative z-10">฿{totalAllFunds.toLocaleString()}</h3>
+                </div>
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col justify-center relative overflow-hidden">
+                  <div className="absolute -right-4 -top-4 w-24 h-24 bg-purple-50 rounded-full z-0 opacity-50"></div>
+                  <p className="text-sm font-medium text-gray-500 mb-1 flex items-center gap-2 relative z-10"><Users className="w-4 h-4 text-purple-500"/> เงินห้องเทอมนี้</p>
+                  <h3 className="text-3xl font-bold text-gray-900 relative z-10">฿{totalRoomFundOverview.toLocaleString()}</h3>
+                </div>
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col justify-center relative overflow-hidden">
+                  <div className="absolute -right-4 -top-4 w-24 h-24 bg-pink-50 rounded-full z-0 opacity-50"></div>
+                  <p className="text-sm font-medium text-gray-500 mb-1 flex items-center gap-2 relative z-10"><Wallet className="w-4 h-4 text-pink-500"/> ฟิวทริปเทอมนี้</p>
+                  <h3 className="text-3xl font-bold text-gray-900 relative z-10">฿{totalTripFundOverview.toLocaleString()}</h3>
+                </div>
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col justify-center relative overflow-hidden">
+                  <div className="absolute -right-4 -top-4 w-24 h-24 bg-gray-50 rounded-full z-0 opacity-50"></div>
+                  <p className="text-sm font-medium text-gray-500 mb-1 flex items-center gap-2 relative z-10"><Users className="w-4 h-4 text-gray-500"/> จำนวนสมาชิกเป้าหมาย</p>
+                  <h3 className="text-3xl font-bold text-gray-900 relative z-10">{expectedStudentCount} <span className="text-base font-normal text-gray-500">คน</span></h3>
+                </div>
               </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                 <div className="flex justify-between items-center mb-6">
-                  <h3 className="font-semibold text-lg text-gray-800 flex items-center gap-2"><Target className="w-5 h-5 text-indigo-500" />เป้าหมายความคืบหน้า (เทอมนี้)</h3>
+                  <h3 className="font-semibold text-lg text-gray-800 flex items-center gap-2"><Target className="w-5 h-5 text-indigo-500" />ความคืบหน้า (เทอมนี้)</h3>
                 </div>
                 <div className="space-y-4">
                   <div className="bg-indigo-50/50 rounded-xl p-4 border border-indigo-50 hover:shadow-sm transition-shadow">
@@ -1418,7 +1461,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Modal ดูประวัติการแก้ไข */}
+        {/* Modal ดูประวัติการแก้ไขของรายการเดียว */}
         {historyModalOpen && historyTx && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-2xl w-full max-w-md animate-in zoom-in-95 duration-200 shadow-xl overflow-hidden flex flex-col max-h-[80vh]">
@@ -1427,24 +1470,28 @@ export default function App() {
                   <History className={`w-5 h-5 ${currentTheme.icon}`} /> ประวัติการดำเนินการ
                 </h3>
                 <div className="flex items-center gap-3">
-                  {/* ✅ เพิ่มปุ่มดูสลิปในหน้าประวัติ */}
-                  {historyTx?.slipUrl && (
-                    <button onClick={() => { setCurrentSlip(historyTx.slipUrl); setSlipModalOpen(true); }} className="px-3 py-1.5 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors shadow-sm">
-                      <ImageIcon className="w-4 h-4" /> ดูสลิป
-                    </button>
-                  )}
                   <button onClick={() => setHistoryModalOpen(false)} className="text-gray-400 hover:text-gray-600 bg-gray-200 hover:bg-gray-300 rounded-full p-1.5 transition">
                     <X className="w-4 h-4" />
                   </button>
                 </div>
               </div>
               <div className="p-6 overflow-y-auto flex-1">
-                <div className="mb-6 pb-4 border-b border-gray-100">
+                <div className="mb-6 pb-6 border-b border-gray-100">
                   <p className="text-sm text-gray-500 mb-1">
                     {historyTx?.type === 'student_payment' ? 'รายการของ:' : 'รายการ:'} <span className="font-semibold text-gray-900">{historyTx?.type === 'student_payment' ? historyTx?.studentName : historyTx?.description}</span>
                   </p>
                   <p className="text-sm text-gray-500">ส่วน: <span className="font-semibold text-gray-900">{historyTx?.fundType === 'room' ? 'เงินห้อง' : 'เงินฟิวทริป'} (เทอม {historyTx?.term})</span></p>
+                  
+                  {/* ✅ ปุ่มดูสลิปแบบชัดๆ ในหน้าประวัติ */}
+                  {historyTx?.slipUrl && (
+                    <div className="mt-4">
+                      <button onClick={() => { setCurrentSlip(historyTx.slipUrl); setSlipModalOpen(true); }} className="w-full py-2.5 bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors shadow-sm">
+                        <ImageIcon className="w-5 h-5" /> เปิดดูรูปภาพหลักฐานสลิปการโอนเงิน
+                      </button>
+                    </div>
+                  )}
                 </div>
+                
                 <div className="space-y-6 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-gray-200 before:to-transparent">
                   {(historyTx?.history || []).map((h, index) => (
                     <div key={index} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
@@ -1474,7 +1521,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Modal ดูหลักฐานสลิป */}
+        {/* Modal ดูหลักฐานสลิปแบบเต็ม */}
         {slipModalOpen && currentSlip && (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={() => setSlipModalOpen(false)}>
             <div className="relative max-w-xl w-full" onClick={(e) => e.stopPropagation()}>
