@@ -4,16 +4,21 @@ import {
   CheckCircle2, Clock, ShieldAlert, Edit, Search, Calendar, 
   X, Bell, MessageSquare, Check, History, Target, PieChart, 
   ArrowUpCircle, ArrowDownCircle, FileText, Image as ImageIcon, 
-  BookOpen, QrCode, Loader2, Upload, AlertCircle, KeyRound, Table, LayoutList
+  BookOpen, QrCode, Loader2, Upload, AlertCircle, KeyRound, Table, LayoutList,
+  Eye, EyeOff
 } from 'lucide-react';
 
 import { supabase } from './supabaseClient';
 
 
 const STUDENT_ADMINS = {
-  '6720117265': 'admin_room', // รหัสนักศึกษาคนที่เป็นแอดมินเงินห้อง
-  '6720117261': 'admin_trip'  // รหัสนักศึกษาคนที่เป็นแอดมินฟิวทริป
+  '6720117265': 'admin_room', // แอดมินเงินห้อง
+  '6720117261': 'admin_trip'  // แอดมินฟิวทริป
 };
+
+const LEFT_STUDENTS = [
+  '6720117049'
+];
 
 const TERMS = ['1/1', '1/2', '2/1', '2/2', '2/b2', '3/1', '3/b1', '3/2', '3/b2', '4/1', '4/b1', '4/2', '4/b2'];
 
@@ -25,30 +30,37 @@ const formatTermName = (termValue) => {
   return `ปี ${year} เทอม ${term}`;
 };
 
-// --- ปรับ Config ให้รับค่า studentYear เพื่อระบุยอดเงินรายบุคคล ---
+
 const getTermConfig = (termStr, fundType, studentYear) => {
   const [termYearStr, term] = termStr.split('/');
   const isBreak = term.startsWith('b');
-  const year = studentYear || 1; // อิงตามปีของนักศึกษา
+  const year = studentYear || parseInt(termYearStr) || 1; 
 
   if (fundType === 'room') {
-    if (isBreak) return { allowed: false, target: 0, weeks: 0 };
-    if (year === 1 && term === '1') return { allowed: true, target: 220, rate: 10, weeks: 22, unit: 'สัปดาห์' };
-    if (year === 1 && term === '2') return { allowed: true, target: 170, rate: 10, weeks: 17, unit: 'สัปดาห์' };
-    return { allowed: true, target: 180, rate: 10, weeks: 18, unit: 'สัปดาห์' };
+    if (isBreak) return { allowed: false, message: 'ไม่มีการเก็บเงินห้องในช่วงปิดเทอม', target: 0, rate: 0, weeks: 0, unit: 'สัปดาห์', minAmount: 10, maxAmount: 0 };
+    // ปี 1
+    if (year === 1 && term === '1') return { allowed: true, target: 220, rate: 10, weeks: 22, unit: 'สัปดาห์', minAmount: 10, maxAmount: 220 };
+    if (year === 1 && term === '2') return { allowed: true, target: 170, rate: 10, weeks: 17, unit: 'สัปดาห์', minAmount: 10, maxAmount: 170 };
+    // ปี 2 ขึ้นไป
+    return { allowed: true, target: 180, rate: 10, weeks: 18, unit: 'สัปดาห์', minAmount: 10, maxAmount: 180 };
   }
 
   if (fundType === 'trip') {
-    if (year === 1 && term === '1') return { allowed: false, target: 0, weeks: 0 };
-    if (year === 1 && term === '2') return { allowed: true, target: 680, rate: 40, weeks: 17, unit: 'สัปดาห์' };
+    // ปี 1
+    if (year === 1 && term === '1') return { allowed: false, message: 'ไม่มีการเก็บเงินฟิวทริปในปี 1 เทอม 1', target: 0, rate: 0, weeks: 0, unit: 'สัปดาห์', minAmount: 40, maxAmount: 0 };
+    if (year === 1 && term === '2') return { allowed: true, target: 680, rate: 40, weeks: 17, unit: 'สัปดาห์', minAmount: 40, maxAmount: 680 };
+    
     if (isBreak) {
-      if (year > 2 || (year === 2 && term === 'b2')) return { allowed: true, target: 300, rate: 10, weeks: 30, unit: 'วัน' };
-      return { allowed: false, target: 0, weeks: 0 };
+      // ตั้งแต่ปี 2 ปิดเทอม 2 เป็นต้นไป
+      if (year > 2 || (year === 2 && term === 'b2')) return { allowed: true, target: 300, rate: 10, weeks: 30, unit: 'วัน', minAmount: 10, maxAmount: 300 };
+      return { allowed: false, message: 'ยังไม่มีการเก็บเงินพิเศษช่วงปิดเทอมนี้', target: 0, rate: 0, weeks: 0, unit: 'วัน', minAmount: 10, maxAmount: 0 };
     }
-    if (year === 2) return { allowed: true, target: 720, rate: 40, weeks: 18, unit: 'สัปดาห์' };
-    if (year >= 3) return { allowed: true, target: 1620, rate: 90, weeks: 18, unit: 'สัปดาห์' };
+    // ปี 2
+    if (year === 2) return { allowed: true, target: 720, rate: 40, weeks: 18, unit: 'สัปดาห์', minAmount: 40, maxAmount: 720 };
+    // ปี 3 ขึ้นไป
+    if (year >= 3) return { allowed: true, target: 1620, rate: 90, weeks: 18, unit: 'สัปดาห์', minAmount: 90, maxAmount: 1620 };
   }
-  return { allowed: false, target: 0, weeks: 0 };
+  return { allowed: false, message: 'ไม่อนุญาต', target: 0, rate: 0, weeks: 0, unit: 'สัปดาห์', minAmount: 0, maxAmount: 0 };
 };
 
 const SESSION_KEY = 'cs2_fund_session';
@@ -63,7 +75,7 @@ export default function App() {
 
   const [transactions, setTransactions] = useState([]); 
   const [students, setStudents] = useState([]);
-  const [targetCounts, setTargetCounts] = useState({ year1: 26, year2: 23 });
+  const [targetCounts, setTargetCounts] = useState({ year1: 24, year2: 23 });
 
   // Modal & Search States
   const [username, setUsername] = useState('');
@@ -88,8 +100,15 @@ export default function App() {
   const [cpUsername, setCpUsername] = useState('');
   const [cpOldPassword, setCpOldPassword] = useState('');
   const [cpNewPassword, setCpNewPassword] = useState('');
+  const [cpConfirmPassword, setCpConfirmPassword] = useState('');
   const [cpError, setCpError] = useState('');
   const [cpSuccess, setCpSuccess] = useState('');
+
+  // Password Visibility States
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showCpOldPassword, setShowCpOldPassword] = useState(false);
+  const [showCpNewPassword, setShowCpNewPassword] = useState(false);
+  const [showCpConfirmPassword, setShowCpConfirmPassword] = useState(false);
 
   // Other Modals
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -176,7 +195,7 @@ export default function App() {
 
   const fetchSettings = async () => {
     const { data } = await supabase.from('system_settings').select('*').eq('id', 1).single();
-    if (data) setTargetCounts({ year1: data.year1_count, year2: data.year2_up_count });
+    if (data) setTargetCounts({ year1: data.year1_count || 24, year2: data.year2_up_count || 23 });
   };
 
   useEffect(() => {
@@ -199,18 +218,14 @@ export default function App() {
     e.preventDefault();
     try {
       const trimmedUsername = String(username).trim();
-      const safeUsers = typeof users !== 'undefined' ? users : {};
-      let user = safeUsers[trimmedUsername];
+      const safeStudents = Array.isArray(students) ? students : [];
+      const student = safeStudents.find(s => String(s?.id).trim() === trimmedUsername);
       
-      if (!user) {
-        const safeStudents = Array.isArray(students) ? students : [];
-        const student = safeStudents.find(s => String(s?.id).trim() === trimmedUsername);
-        if (student) {
-          // ให้สิทธิ์แอดมินถ้ารหัสตรงกับ STUDENT_ADMINS ที่เราตั้งไว้ด้านบน
-          const safeAdmins = typeof STUDENT_ADMINS !== 'undefined' ? STUDENT_ADMINS : {};
-          const assignedRole = student.role || safeAdmins[String(student.id).trim()] || 'student';
-          user = { password: student.password || 'password', role: assignedRole, name: student.name };
-        }
+      let user = null;
+      if (student) {
+        const safeAdmins = typeof STUDENT_ADMINS !== 'undefined' ? STUDENT_ADMINS : {};
+        const assignedRole = student.role || safeAdmins[String(student.id).trim()] || 'student';
+        user = { password: student.password || 'password', role: assignedRole, name: student.name };
       }
       
       if (user && user.password === password) {
@@ -225,7 +240,6 @@ export default function App() {
       }
     } catch (err) {
       console.error("Login Error: ", err);
-      // หากมีโค้ดพังหลังบ้าน จะแสดงสาเหตุให้เห็นทันที
       setLoginError('เกิดข้อผิดพลาดในระบบ: ' + err.message);
     }
   };
@@ -241,51 +255,43 @@ export default function App() {
     setCpError('');
     setCpSuccess('');
 
-    let isMockAdmin = false;
-    let targetUser = users[cpUsername];
+    const student = students.find(s => String(s?.id).trim() === String(cpUsername).trim());
 
-    if (targetUser) {
-      isMockAdmin = true;
-    } else {
-      const student = students.find(s => String(s?.id).trim() === String(cpUsername).trim());
-      if (student) {
-        targetUser = { password: student.password || 'password', id: student.id };
-      }
-    }
-
-    if (!targetUser) {
+    if (!student) {
       setCpError('ไม่พบชื่อผู้ใช้งาน หรือรหัสนักศึกษานี้ในระบบ');
       return;
     }
 
-    if (targetUser.password !== cpOldPassword) {
+    const currentPassword = student.password || 'password';
+    if (currentPassword !== cpOldPassword) {
       setCpError('รหัสผ่านเดิมไม่ถูกต้อง');
       return;
     }
 
-    if (isMockAdmin) {
-      setCpError('ไม่สามารถเปลี่ยนรหัสผ่านของบัญชีแอดมินหลักได้');
+    if (cpNewPassword !== cpConfirmPassword) {
+      setCpError('รหัสผ่านใหม่และการยืนยันรหัสผ่านไม่ตรงกัน');
       return;
     }
 
-    if (cpNewPassword.length < 6) {
-      setCpError('รหัสผ่านใหม่ต้องมีความยาวอย่างน้อย 6 ตัวอักษร');
+    if (cpNewPassword.length < 8) {
+      setCpError('รหัสผ่านใหม่ต้องมีความยาวอย่างน้อย 8 ตัวอักษร');
       return;
     }
 
     const { error } = await supabase
       .from('students')
       .update({ password: cpNewPassword })
-      .eq('id', targetUser.id);
+      .eq('id', student.id);
 
     if (error) {
       setCpError('เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่');
     } else {
       setCpSuccess('เปลี่ยนรหัสผ่านสำเร็จ! ท่านสามารถใช้รหัสผ่านใหม่ในการเข้าสู่ระบบครั้งต่อไป');
-      setStudents(students.map(s => String(s?.id).trim() === String(targetUser.id).trim() ? { ...s, password: cpNewPassword } : s));
+      setStudents(students.map(s => String(s?.id).trim() === String(student.id).trim() ? { ...s, password: cpNewPassword } : s));
       setTimeout(() => {
         setCpModalOpen(false);
-        setCpUsername(''); setCpOldPassword(''); setCpNewPassword('');
+        setCpUsername(''); setCpOldPassword(''); setCpNewPassword(''); setCpConfirmPassword('');
+        setShowCpOldPassword(false); setShowCpNewPassword(false); setShowCpConfirmPassword(false);
         setCpSuccess('');
       }, 3000);
     }
@@ -309,7 +315,7 @@ export default function App() {
     }, 300);
   };
 
-  const rules = getTermConfig(selectedTerm, activeTab, currentUser?.year || 1);
+  const rules = getTermConfig(selectedTerm, activeTab, currentUser?.year || parseInt(selectedTerm.split('/')[0]) || 1);
   const parsedAmount = parseFloat(amount) || 0;
   const isAmountValid = rules.allowed && parsedAmount >= rules.minAmount && parsedAmount <= rules.maxAmount && (parsedAmount % rules.rate === 0);
   const calculatedUnits = rules.allowed && isAmountValid ? Number((parsedAmount / rules.rate).toFixed(2)) : 0;
@@ -526,35 +532,55 @@ export default function App() {
   const markNotificationResolved = (id) => setNotifications((notifications || []).map(n => n?.id === id ? { ...n, status: 'resolved' } : n));
   const formatDate = (isoString) => new Date(isoString).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
 
-  // --- ลอจิกคำนวณข้อมูลนักศึกษาสำหรับตาราง ---
-  const filteredStudents = students.filter(s => (s.name || '').includes(studentSearchQuery) || String(s.id).includes(studentSearchQuery));
+  // --- ลอจิกกรองรายชื่อ 24 vs 23 คนตามชั้นปี ---
+  const currentYearInt = parseInt(selectedTerm.split('/')[0]);
+  
+  // สร้าง Array ใหม่เพื่อกรองคนออก
+  let activeStudents = [...students];
+  if (currentYearInt >= 2) {
+    // กรองคนที่อยู่ในรายชื่อย้ายออก (LEFT_STUDENTS) ออกไปเมื่อดูข้อมูลปี 2 ขึ้นไป
+    activeStudents = students.filter(s => 
+      s.status !== 'inactive' && 
+      s.is_active !== false &&
+      !LEFT_STUDENTS.includes(String(s.id).trim())
+    );
+  }
+
+  // --- ลอจิกคำนวณข้อมูลนักศึกษาสำหรับตาราง (คำนวณจากคนที่ยัง Active เท่านั้น) ---
+  const filteredStudents = activeStudents.filter(s => (s.name || '').includes(studentSearchQuery) || String(s.id).includes(studentSearchQuery));
 
   const studentsWithSummary = filteredStudents.map(student => {
-    const sYear = student.year || 1;
-    const sRules = getTermConfig(selectedTerm, activeTab, sYear);
-    
+    const sYear = student.year || currentYearInt || 1; // ดึงกฎตามชั้นปีของเทอมที่กำลังเปิดดู
+    const sRules = getTermConfig(selectedTerm, activeTab, sYear); 
+
     let totalPaid = 0;
     transactions.forEach(tx => {
       if (tx.fundType === activeTab && tx.term === selectedTerm && tx.status === 'completed' && String(tx.studentId) === String(student.id)) {
         totalPaid += Number(tx.amount) || 0;
       }
     });
+      
+    const targetAmount = sRules.target;
+    const remainingAmount = Math.max(0, targetAmount - totalPaid);
 
     const weeks = [];
-    const rate = sRules.rate || 10;
-    let rem = totalPaid;
-    for (let i = 0; i < sRules.weeks; i++) {
-      if (rem >= rate) { weeks.push(rate); rem -= rate; }
-      else if (rem > 0) { weeks.push(rem); rem = 0; }
-      else { weeks.push(0); }
+    const ratePerWeek = Number(sRules.rate) || 10;
+    let remaining = totalPaid; 
+    
+    for (let i = 1; i <= sRules.weeks; i++) {
+      if (remaining >= ratePerWeek) {
+        weeks.push(ratePerWeek);
+        remaining -= ratePerWeek;
+      } else if (remaining > 0) {
+        weeks.push(remaining);
+        remaining = 0;
+      } else {
+        weeks.push(0); 
+      }
     }
 
-    return { ...student, totalPaid, targetAmount: sRules.target, remainingAmount: Math.max(0, sRules.target - totalPaid), weeks, allowed: sRules.allowed };
+    return { ...student, totalPaid, targetAmount, remainingAmount, weeks, allowed: sRules.allowed, message: sRules.message };
   });
-
-  const totalActiveFund = transactions
-    .filter(tx => tx.fundType === activeTab && tx.term === selectedTerm && tx.status === 'completed')
-    .reduce((sum, tx) => tx.type === 'expense' ? sum - Number(tx.amount) : sum + Number(tx.amount), 0);
 
   const termTransactions = (transactions || []).filter(t => t?.term === selectedTerm);
   const currentFundTransactions = termTransactions.filter(t => t?.fundType === activeTab);
@@ -577,11 +603,11 @@ export default function App() {
   const adminNotifications = (notifications || []).filter(n => n?.status === 'pending' && n?.term === selectedTerm && currentUser && ((currentUser.role === 'admin_room' && n?.fundType === 'room') || (currentUser.role === 'admin_trip' && n?.fundType === 'trip')));
 
   // --- เป้าหมายรวมแบบไดนามิก ---
-  const currentYearInt = parseInt(selectedTerm.split('/')[0]);
   const expectedStudentCount = currentYearInt === 1 ? targetCounts.year1 : targetCounts.year2;
   
-  const configRoom = getTermConfig(selectedTerm, 'room');
-  const configTrip = getTermConfig(selectedTerm, 'trip');
+  // คำนวณเป้าหมายฐานของเทอมปัจจุบัน
+  const configRoom = getTermConfig(selectedTerm, 'room', currentYearInt);
+  const configTrip = getTermConfig(selectedTerm, 'trip', currentYearInt);
   
   const termTargetRoom = configRoom.target * expectedStudentCount;
   const termTargetTrip = configTrip.target * expectedStudentCount;
@@ -789,8 +815,8 @@ export default function App() {
             )}
 
             <div className="flex space-x-2 bg-white p-2 rounded-2xl shadow-sm border border-gray-100">
-              <button onClick={() => { setActiveTab('room'); setShowTableView(false); }} className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-semibold transition-all ${activeTab === 'room' ? 'bg-purple-600 text-white shadow-md' : 'text-gray-500 hover:bg-purple-50'}`}><Users className="w-5 h-5" /> บัญชีเงินห้อง</button>
-              <button onClick={() => { setActiveTab('trip'); setShowTableView(false); }} className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-semibold transition-all ${activeTab === 'trip' ? 'bg-pink-600 text-white shadow-md' : 'text-gray-500 hover:bg-pink-50'}`}><Wallet className="w-5 h-5" /> บัญชีเงินฟิวทริป</button>
+              <button onClick={() => { setActiveTab('room'); setShowTableView(false); }} className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-semibold transition-all ${activeTab === 'room' ? themeRoom.bgActive : 'text-gray-500 hover:bg-purple-50'}`}><Users className="w-5 h-5" /> บัญชีเงินห้อง</button>
+              <button onClick={() => { setActiveTab('trip'); setShowTableView(false); }} className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-semibold transition-all ${activeTab === 'trip' ? themeTrip.bgActive : 'text-gray-500 hover:bg-pink-50'}`}><Wallet className="w-5 h-5" /> บัญชีเงินฟิวทริป</button>
             </div>
 
             <div className={`rounded-2xl shadow-sm border p-6 flex items-center justify-between text-white ${currentTheme.gradient}`}>
@@ -851,7 +877,7 @@ export default function App() {
                               <td className="px-4 py-3 text-center border border-gray-300 text-gray-800">{idx + 1}</td>
                               <td className="px-4 py-3 font-mono text-center border border-gray-300 text-gray-800">{s?.id}</td>
                               <td className="px-4 py-3 font-medium border border-gray-300 text-gray-800">{s?.name}</td>
-                              <td className="px-4 py-3 text-center border border-gray-300 font-bold text-indigo-600 bg-indigo-50/30">ปี {s.year || 1}</td>
+                              <td className="px-4 py-3 text-center border border-gray-300 font-bold text-indigo-600 bg-indigo-50/30">ปี {s.year || currentYearInt || 1}</td>
                               <td className="px-4 py-3 text-right border border-gray-300 font-bold text-emerald-600">฿{s.totalPaid.toLocaleString()}</td>
                               
                               {/* วาดช่องตารางตามจำนวนสัปดาห์ */}
@@ -941,7 +967,7 @@ export default function App() {
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-[700px] lg:col-span-7">
                   <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
-                    <h3 className="font-semibold text-lg text-gray-800 mb-3 flex items-center gap-2"><Users className={`w-5 h-5 ${currentTheme.icon}`} /> รายชื่อสมาชิก</h3>
+                    <h3 className="font-semibold text-lg text-gray-800 mb-3 flex items-center gap-2"><Users className={`w-5 h-5 ${currentTheme.icon}`} /> รายชื่อสมาชิก ({studentsWithSummary.length} คน)</h3>
                     <div className="relative w-full">
                       <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                       <input type="text" placeholder="ค้นหารหัสนศ. หรือ ชื่อ-สกุล..." value={studentSearchQuery} onChange={(e) => setStudentSearchQuery(e.target.value)} className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
@@ -961,7 +987,7 @@ export default function App() {
                           {studentsWithSummary?.map((s, idx) => (
                             <tr key={s?.id || idx} className="hover:bg-gray-50 transition-colors">
                               <td className="px-4 py-4 text-center text-sm text-gray-400">{idx+1}</td><td className="px-4 py-4 text-sm text-gray-500 font-mono">{s?.id}</td><td className="px-4 py-4 font-medium text-sm md:text-base">{s?.name}</td>
-                              <td className="px-4 py-4 text-center font-bold text-indigo-600">ปี {s.year || 1}</td>
+                              <td className="px-4 py-4 text-center font-bold text-indigo-600">ปี {s.year || currentYearInt || 1}</td>
                               <td className="px-4 py-4 text-right"><span className={`font-bold ${(s?.totalPaid || 0)>0?'text-green-600':'text-gray-300'}`}>฿{(s?.totalPaid || 0).toLocaleString()}</span></td>
                               <td className="px-4 py-4 text-right">{(s?.remainingAmount || 0)>0 && s.allowed?<span className="font-semibold text-red-500 text-sm">฿{(s?.remainingAmount || 0).toLocaleString()}</span>:(s.allowed?<span className="font-semibold text-emerald-500 text-sm inline-flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> ครบ</span>:<span className="text-sm text-gray-400">-</span>)}</td>
                               {currentUser && <td className="px-4 py-4 text-center">{s.allowed ? <button onClick={()=>openRecordModal(s)} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors bg-gray-100 hover:bg-gray-200 ${currentTheme.text} inline-flex items-center gap-1`}><PlusCircle className="w-3.5 h-3.5" /> จ่ายเงิน</button> : <span className="text-gray-300 text-xs">-</span>}</td>}
@@ -1092,7 +1118,12 @@ export default function App() {
                  </div>
                  <div>
                    <label className="block text-sm font-medium text-gray-700 mb-1">รหัสผ่าน (Password)</label>
-                   <input type="password" value={password} onChange={(e)=>setPassword(e.target.value)} placeholder="8 ตัวขึ้นไป" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none transition" required/>
+                   <div className="relative">
+                     <input type={showLoginPassword ? "text" : "password"} value={password} onChange={(e)=>setPassword(e.target.value)} placeholder="8 ตัวขึ้นไป" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 pr-12 focus:ring-2 focus:ring-indigo-500 outline-none transition" required/>
+                     <button type="button" onClick={() => setShowLoginPassword(!showLoginPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors">
+                       {showLoginPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                     </button>
+                   </div>
                  </div>
                  
                  <div className="flex justify-end items-center mt-2">
@@ -1101,7 +1132,7 @@ export default function App() {
                    </button>
                  </div>
 
-                 {/* ✅ เพิ่ม type="submit" เพื่อบังคับให้ปุ่มทำงานส่งข้อมูลเสมอ */}
+
                  <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-all shadow-sm">เข้าสู่ระบบ</button>
                </form>
 
@@ -1144,11 +1175,30 @@ export default function App() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">รหัสผ่านเดิม</label>
-                  <input type="password" value={cpOldPassword} onChange={(e) => setCpOldPassword(e.target.value)} required placeholder="รหัสผ่านปัจจุบัน" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none transition" />
+                  <div className="relative">
+                    <input type={showCpOldPassword ? "text" : "password"} value={cpOldPassword} onChange={(e) => setCpOldPassword(e.target.value)} required placeholder="รหัสผ่านปัจจุบัน" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 pr-12 focus:ring-2 focus:ring-indigo-500 outline-none transition" />
+                    <button type="button" onClick={() => setShowCpOldPassword(!showCpOldPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                      {showCpOldPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">รหัสผ่านใหม่ (6 ตัวอักษรขึ้นไป)</label>
-                  <input type="password" value={cpNewPassword} onChange={(e) => setCpNewPassword(e.target.value)} required placeholder="รหัสผ่านใหม่" minLength="6" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none transition" />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">รหัสผ่านใหม่ (8 ตัวอักษรขึ้นไป)</label>
+                  <div className="relative">
+                    <input type={showCpNewPassword ? "text" : "password"} value={cpNewPassword} onChange={(e) => setCpNewPassword(e.target.value)} required placeholder="รหัสผ่านใหม่" minLength="8" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 pr-12 focus:ring-2 focus:ring-indigo-500 outline-none transition" />
+                    <button type="button" onClick={() => setShowCpNewPassword(!showCpNewPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                      {showCpNewPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">ยืนยันรหัสผ่านใหม่</label>
+                  <div className="relative">
+                    <input type={showCpConfirmPassword ? "text" : "password"} value={cpConfirmPassword} onChange={(e) => setCpConfirmPassword(e.target.value)} required placeholder="ยืนยันรหัสผ่านใหม่อีกครั้ง" minLength="8" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 pr-12 focus:ring-2 focus:ring-indigo-500 outline-none transition" />
+                    <button type="button" onClick={() => setShowCpConfirmPassword(!showCpConfirmPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                      {showCpConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
                 </div>
                 <button type="submit" disabled={!!cpSuccess} className={`w-full text-white font-bold py-3 rounded-xl flex justify-center items-center gap-2 shadow-sm transition-colors ${cpSuccess ? 'bg-gray-400' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
                   ยืนยันการเปลี่ยนรหัสผ่าน
