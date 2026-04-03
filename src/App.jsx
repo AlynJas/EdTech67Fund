@@ -30,7 +30,7 @@ const formatTermName = (termValue) => {
   return `ปี ${year} เทอม ${term}`;
 };
 
-// --- ✅ ปรับ Config กฎการเก็บเงินตามเงื่อนไขใหม่ ป้องกันหน้าขาวล้วน ---
+// --- ✅ ปรับ Config กฎการเก็บเงินตามเงื่อนไขใหม่ ---
 const getTermConfig = (termStr, fundType, studentYear) => {
   if (!termStr || typeof termStr !== 'string' || !termStr.includes('/')) {
      return { allowed: false, message: 'ข้อมูลเทอมไม่ถูกต้อง', target: 0, rate: 0, weeks: 0, unit: 'สัปดาห์', minAmount: 0, maxAmount: 0 };
@@ -69,7 +69,7 @@ const getTermConfig = (termStr, fundType, studentYear) => {
 const SESSION_KEY = 'cs2_fund_session';
 const TEN_DAYS_MS = 10 * 24 * 60 * 60 * 1000;
 
-// ✅ ฟังก์ชันช่วยดึงค่าจาก LocalStorage ป้องกันหน้าขาว
+// ✅ ฟังก์ชันช่วยดึงค่าจาก LocalStorage อย่างปลอดภัย
 const getSafeStorage = (key, defaultVal) => {
   try {
     const val = localStorage.getItem(key);
@@ -80,7 +80,7 @@ const getSafeStorage = (key, defaultVal) => {
   }
 };
 
-// ✅ ฟังก์ชันแปลงไฟล์รูปภาพเป็น Base64 เพื่อให้บันทึกรูปใน Supabase ได้อย่างถาวรโดยไม่ต้องตั้งค่า Storage Bucket
+// ✅ ฟังก์ชันแปลงไฟล์รูปภาพเป็น Base64
 const fileToBase64 = (file) => new Promise((resolve, reject) => {
   const reader = new FileReader();
   reader.readAsDataURL(file);
@@ -91,7 +91,7 @@ const fileToBase64 = (file) => new Promise((resolve, reject) => {
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   
-  // ป้องกันค่าขยะพาแครชหน้าจอขาว
+  
   const [currentView, setCurrentView] = useState(() => getSafeStorage('cs2_currentView', 'overview')); 
   const [activeTab, setActiveTab] = useState(() => getSafeStorage('cs2_activeTab', 'room')); 
   const [selectedTerm, setSelectedTerm] = useState(() => {
@@ -146,7 +146,7 @@ export default function App() {
   const [otherType, setOtherType] = useState('income');
   const [otherAmount, setOtherAmount] = useState('');
   const [otherDescription, setOtherDescription] = useState('');
-  const [otherPerson, setOtherPerson] = useState(''); // ✅ เพิ่ม state เก็บชื่อผู้รับ/ผู้จ่าย
+  const [otherPerson, setOtherPerson] = useState(''); 
   const [otherSlip, setOtherSlip] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [notifyModalOpen, setNotifyModalOpen] = useState(false);
@@ -325,12 +325,18 @@ export default function App() {
     }
   };
 
+  // ✅ ฟังก์ชันเปิด Modal จ่ายเงินที่ปรับปรุงให้เสถียรที่สุด
   const openRecordModal = (student) => {
-    setRecordTarget(student);
-    setAmount('');
-    setPaymentStep('input');
-    setPendingTxId(null);
-    setRecordModalOpen(true);
+    try {
+      if (!student) return;
+      setRecordTarget(student);
+      setAmount('');
+      setPaymentStep('input');
+      setPendingTxId(null);
+      setRecordModalOpen(true);
+    } catch (e) {
+      console.error("Error opening payment modal:", e);
+    }
   };
 
   const closeRecordModal = () => {
@@ -343,7 +349,7 @@ export default function App() {
     }, 300);
   };
 
-  // ระบบจัดการวันที่แบบปลอดภัย ป้องกันพังเวลาเจอข้อมูลขยะ
+  // ✅ ระบบจัดการวันที่แบบปลอดภัย
   const formatDate = (isoString) => {
     if (!isoString) return '-';
     const d = new Date(isoString);
@@ -359,47 +365,59 @@ export default function App() {
     e.preventDefault();
     if (!currentUser || !recordTarget) return; 
 
-    // กฎสำหรับการจ่ายเงินของนักศึกษาที่ถูกเลือก
+
     const targetStudentYear = recordTarget?.year || parseInt(String(selectedTerm).split('/')[0]) || 1;
     const recordRules = getTermConfig(selectedTerm, activeTab, targetStudentYear);
     
     const parsedAmount = parseFloat(amount) || 0;
     const isAmountValid = recordRules.allowed && parsedAmount >= recordRules.minAmount && parsedAmount <= recordRules.maxAmount && (parsedAmount % recordRules.rate === 0);
 
-    if (!isAmountValid) return;
+    if (!isAmountValid) {
+      alert("ยอดเงินไม่ถูกต้องตามเงื่อนไข");
+      return;
+    }
 
     setPaymentStep('qr');
     setQrTimeLeft(660); 
 
-    const newTimestamp = new Date().toISOString();
-    const newDbTx = {
-      type: 'student_payment', 
-      student_id: recordTarget.id, 
-      student_name: recordTarget.name,
-      fund_type: activeTab, 
-      term: selectedTerm, 
-      amount: parsedAmount, 
-      recorded_by: currentUser.name,
-      timestamp: newTimestamp, 
-      history: [{ action: 'create', amount: parsedAmount, recordedBy: currentUser.name, timestamp: newTimestamp }],
-      status: 'pending' 
-    };
-
-    const { data } = await supabase.from('transactions').insert([newDbTx]).select();
-    if (data && data.length > 0) {
-      const formattedTx = {
-        ...data[0], studentId: data[0].student_id, studentName: data[0].student_name, fundType: data[0].fund_type, recordedBy: data[0].recorded_by, slipUrl: data[0].slip_url, status: 'pending'
+    try {
+      const newTimestamp = new Date().toISOString();
+      const newDbTx = {
+        type: 'student_payment', 
+        student_id: recordTarget.id, 
+        student_name: recordTarget.name,
+        fund_type: activeTab, 
+        term: selectedTerm, 
+        amount: parsedAmount, 
+        recorded_by: currentUser.name,
+        timestamp: newTimestamp, 
+        history: [{ action: 'create', amount: parsedAmount, recordedBy: currentUser.name, timestamp: newTimestamp }],
+        status: 'pending' 
       };
-      setTransactions(prev => [formattedTx, ...prev]);
-      setPendingTxId(formattedTx.id); 
-    }
 
-    qrTimerRef.current = setInterval(() => {
-      setQrTimeLeft((prev) => {
-        if (prev <= 1) { clearInterval(qrTimerRef.current); return 0; }
-        return prev - 1;
-      });
-    }, 1000);
+      const { data, error } = await supabase.from('transactions').insert([newDbTx]).select();
+      
+      if (error) throw error;
+      
+      if (data && data.length > 0) {
+        const formattedTx = {
+          ...data[0], studentId: data[0].student_id, studentName: data[0].student_name, fundType: data[0].fund_type, recordedBy: data[0].recorded_by, slipUrl: data[0].slip_url, status: 'pending'
+        };
+        setTransactions(prev => [formattedTx, ...prev]);
+        setPendingTxId(formattedTx.id); 
+      }
+
+      qrTimerRef.current = setInterval(() => {
+        setQrTimeLeft((prev) => {
+          if (prev <= 1) { clearInterval(qrTimerRef.current); return 0; }
+          return prev - 1;
+        });
+      }, 1000);
+    } catch (err) {
+      console.error("Error creating record:", err);
+      alert("เกิดข้อผิดพลาดในการสร้างรายการ กรุณาลองใหม่อีกครั้ง");
+      setPaymentStep('input');
+    }
   };
 
   const handleVerifySlip = async (e) => {
@@ -461,7 +479,7 @@ export default function App() {
     setVerifyingHistoryId(tx.id);
 
     try {
-      // แปลงรูปเป็น Base64 แล้วอัปโหลดเข้าฐานข้อมูลโดยตรงเลย (เพราะเป็นการแนบย้อนหลังแมนนวล)
+
       const fallbackSlipUrl = await fileToBase64(file);
 
       await supabase.from('transactions').update({ status: 'completed', slip_url: fallbackSlipUrl }).eq('id', tx.id);
@@ -477,26 +495,13 @@ export default function App() {
     }
   };
 
-  // ✅ การอัปสลิปแมนนวล โดยใช้ Base64 เพื่อให้รูปภาพคงอยู่ถาวร
-  const handleUploadSlip = async (e, txId) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const slipUrl = await fileToBase64(file); 
-    
-    await supabase.from('transactions').update({ status: 'completed', slip_url: slipUrl }).eq('id', txId);
-    
-    setTransactions(prev => prev.map(t => t.id === txId ? { ...t, slipUrl: slipUrl, status: 'completed' } : t));
-    setSuccessMsg('แนบสลิปการโอนเงินสำเร็จ!');
-    setTimeout(() => setSuccessMsg(''), 3000);
-  };
 
-  // ✅ บันทึกรายรับ/รายจ่าย อื่นๆ พร้อมชื่อบุคคล/ร้านค้า และสลิป
   const handleRecordOther = async (e) => {
     e.preventDefault();
     if (!currentUser || !otherAmount || !otherDescription) return;
     const newTimestamp = new Date().toISOString();
     
-    // แปลงไฟล์รูปเป็น Base64 เพื่อเก็บถาวร
+
     let slipUrl = null;
     if (otherSlip) {
       slipUrl = await fileToBase64(otherSlip);
@@ -507,7 +512,7 @@ export default function App() {
     const newDbTx = {
       type: otherType, 
       description: otherDescription, 
-      student_name: otherPerson, // ✅ เก็บชื่อบุคคลที่เกี่ยวข้องลงในฟิลด์ student_name
+      student_name: otherPerson, 
       slip_url: slipUrl, 
       fund_type: activeTab,
       term: selectedTerm, 
@@ -586,7 +591,7 @@ export default function App() {
 
   const filteredStudents = activeStudents.filter(s => (s?.name || '').includes(studentSearchQuery) || String(s?.id || '').includes(studentSearchQuery));
 
-  // การคำนวณยอดเงินสะสม (Grand Total) ทุกปีการศึกษา
+  // ✅ การคำนวณยอดเงินสะสม (Grand Total)
   const calculateGrandTotal = (txs, fundType) => {
     return (txs || [])
       .filter(tx => (tx?.status === 'completed' || tx?.status === 'success') && (!fundType || tx?.fundType === fundType))
@@ -598,11 +603,10 @@ export default function App() {
   const grandTotalAll = grandTotalRoom + grandTotalTrip;
 
 
-  // ดึงรายการ Transaction ที่ตรงกับเทอม และ แท็บ (Room/Trip) ปัจจุบัน
   const termTransactions = (transactions || []).filter(t => t?.term === selectedTerm);
   const currentFundTransactions = termTransactions.filter(t => t?.fundType === activeTab);
 
-  // ให้สถานะ success ถูกนับเป็น completed ด้วย เผื่อแอดมินแก้ไข Database เอง
+
   const calculateNetTotal = (txs) => (txs || [])
     .filter(tx => tx?.status === 'completed' || tx?.status === 'success')
     .reduce((sum, tx) => tx?.type === 'expense' ? sum - (Number(tx?.amount) || 0) : sum + (Number(tx?.amount) || 0), 0);
@@ -615,7 +619,7 @@ export default function App() {
 
     let totalPaid = 0;
     currentFundTransactions.forEach(tx => {
-      // ✅ เพิ่มเช็คสถานะ success
+      
       if (tx?.type === 'student_payment' && (tx?.status === 'completed' || tx?.status === 'success') && String(tx?.studentId) === String(student?.id)) {
         totalPaid += Number(tx?.amount) || 0;
       }
@@ -662,12 +666,12 @@ export default function App() {
 
   const adminNotifications = (notifications || []).filter(n => n?.status === 'pending' && n?.term === selectedTerm && currentUser && ((currentUser?.role === 'admin_room' && n?.fundType === 'room') || (currentUser?.role === 'admin_trip' && n?.fundType === 'trip')));
 
-  // --- เป้าหมายรวมแบบไดนามิก ---
+
   const expectedStudentCount = currentYearInt === 1 ? targetCounts.year1 : targetCounts.year2;
-  
+
   const configRoom = getTermConfig(selectedTerm, 'room', currentYearInt);
   const configTrip = getTermConfig(selectedTerm, 'trip', currentYearInt);
-  
+
   const termTargetRoom = (configRoom.target || 0) * expectedStudentCount;
   const termTargetTrip = (configTrip.target || 0) * expectedStudentCount;
   const termTotalTarget = termTargetRoom + termTargetTrip;
@@ -711,14 +715,12 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800 font-sans pb-12">
-      {/* CSS ลบตาออโต้ของเบราว์เซอร์ */}
+      
       <style>{`
         input[type="password"]::-ms-reveal,
-        input[type="password"]::-ms-clear {
-          display: none;
-        }
+        input[type="password"]::-ms-clear { display: none; }
       `}</style>
-      {/* Navbar */}
+      
       <nav className="bg-gradient-to-r from-indigo-800 via-indigo-600 to-violet-600 text-white shadow-lg sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex justify-between items-center py-4">
@@ -754,7 +756,7 @@ export default function App() {
         </div>
       </nav>
 
-      {/* Term Selector Header */}
+
       {currentView !== 'login' && (
         <div className="bg-white border-b border-gray-200 shadow-sm sticky top-[72px] z-20">
           <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
@@ -778,7 +780,7 @@ export default function App() {
         {currentView === 'overview' && (
           <div className="space-y-8 animate-in fade-in duration-500">
             
-            {/* --- ส่วนที่ 1: ยอดเงินสะสมรวม (ทุกปีการศึกษา/ทุกเทอม) --- */}
+
             <div>
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl md:text-2xl font-bold text-gray-800 flex items-center gap-2">
@@ -804,7 +806,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* --- ส่วนที่ 2: ข้อมูลประจำเทอม --- */}
+
             <div className="pt-6 border-t border-gray-200">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl md:text-2xl font-bold text-gray-800 flex items-center gap-2">
@@ -909,8 +911,8 @@ export default function App() {
                         <p className="text-xs text-gray-500 mt-1">แจ้งโดย: {notif?.notifiedBy} | ยอดเดิม: ฿{(notif?.originalAmount || 0).toLocaleString()}</p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <button onClick={() => { const txToEdit = transactions.find(t => t?.id === notif?.txId); if (txToEdit) { setEditingTx(txToEdit); setEditAmount(txToEdit?.amount); setEditModalOpen(true); } }} className="px-3 py-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-lg text-sm font-medium transition">แก้ไขรายการนี้</button>
-                        <button onClick={() => markNotificationResolved(notif?.id)} className="px-3 py-1.5 bg-green-50 text-green-600 hover:bg-green-100 rounded-lg text-sm font-medium transition flex items-center gap-1"><Check className="w-4 h-4" /> จัดการแล้ว</button>
+                        <button type="button" onClick={() => { const txToEdit = transactions.find(t => t?.id === notif?.txId); if (txToEdit) { setEditingTx(txToEdit); setEditAmount(txToEdit?.amount); setEditModalOpen(true); } }} className="px-3 py-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-lg text-sm font-medium transition">แก้ไขรายการนี้</button>
+                        <button type="button" onClick={() => markNotificationResolved(notif?.id)} className="px-3 py-1.5 bg-green-50 text-green-600 hover:bg-green-100 rounded-lg text-sm font-medium transition flex items-center gap-1"><Check className="w-4 h-4" /> จัดการแล้ว</button>
                       </div>
                     </div>
                   ))}
@@ -919,8 +921,8 @@ export default function App() {
             )}
 
             <div className="flex space-x-2 bg-white p-2 rounded-2xl shadow-sm border border-gray-100">
-              <button onClick={() => { setActiveTab('room'); setShowTableView(false); }} className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-semibold transition-all ${activeTab === 'room' ? themeRoom.bgActive : 'text-gray-500 hover:bg-purple-50'}`}><Users className="w-5 h-5" /> บัญชีเงินห้อง</button>
-              <button onClick={() => { setActiveTab('trip'); setShowTableView(false); }} className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-semibold transition-all ${activeTab === 'trip' ? themeTrip.bgActive : 'text-gray-500 hover:bg-pink-50'}`}><Wallet className="w-5 h-5" /> บัญชีเงินฟิวทริป</button>
+              <button type="button" onClick={() => { setActiveTab('room'); setShowTableView(false); }} className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-semibold transition-all ${activeTab === 'room' ? themeRoom.bgActive : 'text-gray-500 hover:bg-purple-50'}`}><Users className="w-5 h-5" /> บัญชีเงินห้อง</button>
+              <button type="button" onClick={() => { setActiveTab('trip'); setShowTableView(false); }} className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-semibold transition-all ${activeTab === 'trip' ? themeTrip.bgActive : 'text-gray-500 hover:bg-pink-50'}`}><Wallet className="w-5 h-5" /> บัญชีเงินฟิวทริป</button>
             </div>
 
             <div className={`rounded-2xl shadow-sm border p-6 flex items-center justify-between text-white ${currentTheme.gradient}`}>
@@ -931,6 +933,7 @@ export default function App() {
             {/* --- ปุ่มสลับมุมมองตาราง --- */}
             <div className="flex justify-end">
               <button 
+                type="button"
                 onClick={() => setShowTableView(!showTableView)} 
                 className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm transition-all shadow-sm border ${showTableView ? currentTheme.bgActive : 'bg-white text-gray-600 hover:bg-gray-50 border-gray-200'}`}
               >
@@ -973,6 +976,8 @@ export default function App() {
                                 {isDayUnit ? 'D' : 'W'}{i+1}
                               </th>
                             ))}
+                            {/* ✅ เพิ่มคอลัมน์ จัดการ ให้สามารถกดได้ในมุมมองตารางด้วย */}
+                            {currentUser && <th className="px-4 py-3 font-bold border border-gray-300 text-center w-24">จัดการ</th>}
                           </tr>
                         </thead>
                         <tbody className="bg-white">
@@ -997,11 +1002,22 @@ export default function App() {
                                   </td>
                                 );
                               })}
+                              
+                              {/* ✅ ปุ่มจ่ายเงิน ในมุมมองตาราง */}
+                              {currentUser && (
+                                <td className="px-4 py-3 border text-center bg-white sticky right-0 shadow-sm">
+                                  {s?.allowed ? (
+                                    <button type="button" onClick={(e) => { e.preventDefault(); openRecordModal(s); }} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors bg-gray-100 hover:bg-gray-200 ${currentTheme.text} inline-flex items-center gap-1`}>
+                                      <PlusCircle className="w-3.5 h-3.5" /> จ่ายเงิน
+                                    </button>
+                                  ) : <span className="text-gray-300 text-xs">-</span>}
+                                </td>
+                              )}
                             </tr>
                           ))}
                           <tr className="bg-emerald-50">
                             <td colSpan="4" className="px-4 py-3 text-right font-bold border border-gray-300 text-emerald-900">รวมรับทั้งหมด:</td>
-                            <td colSpan={maxWeeksInTable + 1} className="px-4 py-3 text-left font-bold border border-gray-300 text-emerald-800">฿{totalActiveFund.toLocaleString()}</td>
+                            <td colSpan={currentUser ? maxWeeksInTable + 2 : maxWeeksInTable + 1} className="px-4 py-3 text-left font-bold border border-gray-300 text-emerald-800">฿{totalActiveFund.toLocaleString()}</td>
                           </tr>
                         </tbody>
                       </table>
@@ -1021,7 +1037,7 @@ export default function App() {
                         <input type="text" placeholder="ค้นหารายการ..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white" />
                       </div>
                       {currentUser && currentUser.role === `admin_${activeTab}` && (
-                        <button onClick={() => { setOtherType('income'); setOtherAmount(''); setOtherDescription(''); setOtherPerson(''); setOtherSlip(null); setOtherRecordModalOpen(true); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"><PlusCircle className="w-3.5 h-3.5" /> เพิ่มรายการ</button>
+                        <button type="button" onClick={() => { setOtherType('income'); setOtherAmount(''); setOtherDescription(''); setOtherPerson(''); setOtherSlip(null); setOtherRecordModalOpen(true); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"><PlusCircle className="w-3.5 h-3.5" /> เพิ่มรายการ</button>
                       )}
                     </div>
                   </div>
@@ -1056,7 +1072,7 @@ export default function App() {
                             <td className="px-4 py-2 text-gray-600 border border-gray-300 text-xs text-center">{tx?.recordedBy}</td>
                             <td className="px-4 py-2 text-center border border-gray-300">
                               {tx?.slipUrl ? (
-                                <button onClick={() => { setCurrentSlip(tx.slipUrl); setSlipModalOpen(true); }} className="text-blue-500 hover:text-blue-700 mx-auto block" title="ดูหลักฐาน"><ImageIcon className="w-5 h-5" /></button>
+                                <button type="button" onClick={() => { setCurrentSlip(tx.slipUrl); setSlipModalOpen(true); }} className="text-blue-500 hover:text-blue-700 mx-auto block" title="ดูหลักฐาน"><ImageIcon className="w-5 h-5" /></button>
                               ) : (
                                 <span className="text-gray-300">-</span>
                               )}
@@ -1081,8 +1097,8 @@ export default function App() {
                       <input type="text" placeholder="ค้นหารหัสนศ. หรือ ชื่อ-สกุล..." value={studentSearchQuery} onChange={(e) => setStudentSearchQuery(e.target.value)} className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                     </div>
                   </div>
-                  <div className="overflow-y-auto flex-1">
 
+                  <div className="overflow-y-auto flex-1">
                     {!currentRules.allowed ? (
                        <div className="p-8 text-center text-gray-500 font-medium">{currentRules.message}</div>
                     ) : (
@@ -1099,7 +1115,8 @@ export default function App() {
                               <td className="px-4 py-4 text-center font-bold text-indigo-600">ปี {s?.year || currentYearInt || 1}</td>
                               <td className="px-4 py-4 text-right"><span className={`font-bold ${(s?.totalPaid || 0)>0?'text-green-600':'text-gray-300'}`}>฿{(s?.totalPaid || 0).toLocaleString()}</span></td>
                               <td className="px-4 py-4 text-right">{(s?.remainingAmount || 0)>0 && s?.allowed?<span className="font-semibold text-red-500 text-sm">฿{(s?.remainingAmount || 0).toLocaleString()}</span>:(s?.allowed?<span className="font-semibold text-emerald-500 text-sm inline-flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> ครบ</span>:<span className="text-sm text-gray-400">-</span>)}</td>
-                              {currentUser && <td className="px-4 py-4 text-center">{s?.allowed ? <button onClick={()=>openRecordModal(s)} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors bg-gray-100 hover:bg-gray-200 ${currentTheme.text} inline-flex items-center gap-1`}><PlusCircle className="w-3.5 h-3.5" /> จ่ายเงิน</button> : <span className="text-gray-300 text-xs">-</span>}</td>}
+                              {/* ✅ ปุ่มจ่ายเงิน ในมุมมองกริด */}
+                              {currentUser && <td className="px-4 py-4 text-center">{s?.allowed ? <button type="button" onClick={(e) => { e.preventDefault(); openRecordModal(s); }} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors bg-gray-100 hover:bg-gray-200 ${currentTheme.text} inline-flex items-center gap-1`}><PlusCircle className="w-3.5 h-3.5" /> จ่ายเงิน</button> : <span className="text-gray-300 text-xs">-</span>}</td>}
                             </tr>
                           ))}
                         </tbody>
@@ -1113,7 +1130,7 @@ export default function App() {
                     <div className="flex justify-between items-center mb-3">
                       <h3 className="font-semibold text-lg text-gray-800 flex items-center gap-2"><Clock className={`w-5 h-5 ${currentTheme.icon}`} /> ประวัติรายการ</h3>
                       {currentUser && currentUser?.role === `admin_${activeTab}` && (
-                        <button onClick={() => { setOtherType('income'); setOtherAmount(''); setOtherDescription(''); setOtherPerson(''); setOtherSlip(null); setOtherRecordModalOpen(true); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-900 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"><PlusCircle className="w-3.5 h-3.5" /> รับ/จ่ายอื่น</button>
+                        <button type="button" onClick={() => { setOtherType('income'); setOtherAmount(''); setOtherDescription(''); setOtherPerson(''); setOtherSlip(null); setOtherRecordModalOpen(true); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-900 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"><PlusCircle className="w-3.5 h-3.5" /> รับ/จ่ายอื่น</button>
                       )}
                     </div>
                     <div className="flex gap-2">
@@ -1141,7 +1158,7 @@ export default function App() {
                             const editCount = txHistory.filter(h => h?.action === 'edit').length;
                             const latestAction = txHistory.length > 0 ? txHistory[txHistory.length - 1] : { recordedBy: tx?.recordedBy, timestamp: tx?.timestamp };
                             
-                            // ✅ ตัวแปรเช็คว่าจ่ายแล้วหรือยัง (รองรับทั้ง completed และ success)
+
                             const isPaid = tx?.status === 'completed' || tx?.status === 'success';
 
                             return (
@@ -1149,22 +1166,22 @@ export default function App() {
                                 <td className="px-4 py-3">
                                   <div className="text-[11px] text-gray-500">{formatDate(latestAction?.timestamp)}</div>
                                   <div className={`text-[10px] font-medium mt-0.5 flex items-center gap-1 ${editCount > 0 ? 'text-orange-600' : currentTheme.text}`}><span className={`w-1.5 h-1.5 rounded-full ${editCount > 0 ? 'bg-orange-400' : currentTheme.bgActive.split(' ')[0]}`}></span>{editCount > 0 ? `แก้ครั้งที่ ${editCount} โดย ${latestAction?.recordedBy || '-'}` : `โดย ${latestAction?.recordedBy || '-'}`}</div>
-                                  <button onClick={() => { setHistoryTx(tx); setHistoryModalOpen(true); }} className={`text-[10px] text-gray-400 hover:${currentTheme.text} flex items-center gap-1 mt-1.5 transition-colors bg-gray-100 px-2 py-0.5 rounded`}><History className="w-3 h-3" /> ประวัติ</button>
+                                  <button type="button" onClick={() => { setHistoryTx(tx); setHistoryModalOpen(true); }} className={`text-[10px] text-gray-400 hover:${currentTheme.text} flex items-center gap-1 mt-1.5 transition-colors bg-gray-100 px-2 py-0.5 rounded`}><History className="w-3 h-3" /> ประวัติ</button>
                                 </td>
                                 <td className="px-4 py-3">
                                   {tx?.type === 'student_payment' ? (
                                     <>
                                       <div className="font-medium text-gray-900 text-sm flex items-center flex-wrap gap-1.5">
                                         {tx?.studentName}
-                                        {/* ถ้ายังเป็น pending (หรือแอดมินยังไม่ได้แก้เป็น success) จะขึ้นรอหลักฐาน */}
+
                                         {!isPaid && (
                                           <span className="text-[9px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-bold whitespace-nowrap flex items-center gap-1">
                                             <AlertCircle className="w-3 h-3"/> รอหลักฐาน
                                           </span>
                                         )}
-                                        {/* ✅ ปุ่มดูสลิปที่ชัดเจนขึ้นและกว้างขึ้น */}
+
                                         {isPaid && tx?.slipUrl && (
-                                          <button onClick={() => { setCurrentSlip(tx.slipUrl); setSlipModalOpen(true); }} className="inline-flex items-center gap-1 bg-blue-50 text-blue-600 px-2 py-0.5 rounded text-[10px] font-bold hover:bg-blue-100 transition-colors shrink-0" title="ดูหลักฐานสลิป"><ImageIcon className="w-3 h-3" /> ดูสลิป</button>
+                                          <button type="button" onClick={() => { setCurrentSlip(tx.slipUrl); setSlipModalOpen(true); }} className="inline-flex items-center gap-1 bg-blue-50 text-blue-600 px-2 py-0.5 rounded text-[10px] font-bold hover:bg-blue-100 transition-colors shrink-0" title="ดูหลักฐานสลิป"><ImageIcon className="w-3 h-3" /> ดูสลิป</button>
                                         )}
                                       </div>
                                       <div className="text-[10px] text-gray-500 font-mono mt-0.5">{tx?.studentId}</div>
@@ -1173,12 +1190,12 @@ export default function App() {
                                     <>
                                       <div className="font-medium text-gray-900 text-sm flex items-center flex-wrap gap-1.5">
                                         {tx?.description}
-                                        {/* ✅ ปุ่มดูสลิปที่ชัดเจนขึ้น สำหรับรายรับรายจ่ายอื่น */}
+
                                         {tx?.slipUrl && (
-                                          <button onClick={() => { setCurrentSlip(tx.slipUrl); setSlipModalOpen(true); }} className="inline-flex items-center gap-1 bg-blue-50 text-blue-600 px-2 py-0.5 rounded text-[10px] font-bold hover:bg-blue-100 transition-colors shrink-0" title="ดูหลักฐานสลิป"><ImageIcon className="w-3 h-3" /> ดูสลิป</button>
+                                          <button type="button" onClick={() => { setCurrentSlip(tx.slipUrl); setSlipModalOpen(true); }} className="inline-flex items-center gap-1 bg-blue-50 text-blue-600 px-2 py-0.5 rounded text-[10px] font-bold hover:bg-blue-100 transition-colors shrink-0" title="ดูหลักฐานสลิป"><ImageIcon className="w-3 h-3" /> ดูสลิป</button>
                                         )}
                                       </div>
-                                      {/* ✅ แสดงชื่อผู้รับ/จ่าย ในตารางประวัติ */}
+                                      
                                       {tx?.studentName && <div className="text-[10px] text-gray-500 mt-0.5 truncate">รับ/จ่ายกับ: {tx.studentName}</div>}
                                       <div className={`text-[9px] inline-flex px-1.5 py-0.5 rounded font-medium mt-0.5 ${tx?.type === 'income' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{tx?.type === 'income' ? 'รับสมทบทุน' : 'จ่ายซื้อของ'}</div>
                                     </>
@@ -1201,9 +1218,9 @@ export default function App() {
                                          </label>
                                        )
                                     ) : canEdit ? (
-                                      <button onClick={() => { setEditingTx(tx); setEditAmount(tx?.amount); if (tx?.type !== 'student_payment') setEditDescription(tx?.description); setEditModalOpen(true); }} className={`p-1.5 text-gray-400 hover:${currentTheme.text} hover:bg-gray-100 rounded-lg transition-colors`}><Edit className="w-4 h-4" /></button>
+                                      <button type="button" onClick={() => { setEditingTx(tx); setEditAmount(tx?.amount); if (tx?.type !== 'student_payment') setEditDescription(tx?.description); setEditModalOpen(true); }} className={`p-1.5 text-gray-400 hover:${currentTheme.text} hover:bg-gray-100 rounded-lg transition-colors`}><Edit className="w-4 h-4" /></button>
                                     ) : currentUser?.role === 'student' && tx?.type === 'student_payment' ? (
-                                      <button onClick={() => { setNotifyTx(tx); setNotifyReason(''); setNotifyModalOpen(true); }} className="p-1.5 text-gray-400 hover:text-yellow-600 hover:bg-yellow-50 rounded-lg transition-colors"><Bell className="w-4 h-4" /></button>
+                                      <button type="button" onClick={() => { setNotifyTx(tx); setNotifyReason(''); setNotifyModalOpen(true); }} className="p-1.5 text-gray-400 hover:text-yellow-600 hover:bg-yellow-50 rounded-lg transition-colors"><Bell className="w-4 h-4" /></button>
                                     ) : <span className="text-[10px] text-gray-300">-</span>}
                                   </td>
                                 )}
@@ -1282,7 +1299,7 @@ export default function App() {
                   <KeyRound className="w-5 h-5 text-indigo-600" />
                   <h3 className="text-lg font-bold text-gray-900">เปลี่ยนรหัสผ่าน</h3>
                 </div>
-                <button onClick={() => setCpModalOpen(false)} className="text-gray-400 hover:text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-full p-1 transition"><X className="w-5 h-5" /></button>
+                <button type="button" onClick={() => setCpModalOpen(false)} className="text-gray-400 hover:text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-full p-1 transition"><X className="w-5 h-5" /></button>
               </div>
               
               {cpError && <p className="bg-red-50 text-red-600 p-3 rounded-lg text-sm text-center border border-red-100 mb-4 font-medium">{cpError}</p>}
@@ -1328,13 +1345,121 @@ export default function App() {
           </div>
         )}
 
+        {/* Payment Modal (QR Code & Processing) */}
+        {recordModalOpen && recordTarget && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl w-full max-w-[340px] shadow-2xl overflow-hidden relative flex flex-col max-h-[90vh]">
+              
+              <button type="button" onClick={closeRecordModal} className="absolute top-3 right-3 z-10 w-8 h-8 flex items-center justify-center bg-black/20 hover:bg-black/40 text-white rounded-full transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className={`px-6 py-4 pt-5 flex justify-center items-center ${currentTheme.gradient} text-white shrink-0`}>
+                <h3 className="text-lg font-bold">บันทึกชำระเงิน</h3>
+              </div>
+              
+              <div className="p-5 overflow-y-auto">
+                <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 mb-4 flex items-center gap-3">
+                  <div className={`p-2.5 rounded-full ${currentTheme.lightCard}`}><Users className={`w-5 h-5 ${currentTheme.icon}`} /></div>
+                  <div>
+                    <p className="font-bold text-gray-900 leading-tight">{recordTarget.name}</p>
+                    <p className="text-xs text-gray-500 font-mono mt-0.5">รหัส: {recordTarget.id} | {formatTermName(selectedTerm)}</p>
+                  </div>
+                </div>
+
+                {!recordRules.allowed ? (
+                  <div className="bg-red-50 text-red-600 p-4 rounded-xl text-center border border-red-100"><ShieldAlert className="w-8 h-8 mx-auto mb-2" /><p className="font-bold">{recordRules.message}</p></div>
+                ) : (
+                  <>
+                    {paymentStep === 'input' && (
+                      <form onSubmit={handleGenerateQR} className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 text-center mb-2">จำนวนเงิน ({recordRules.rate}บ./{recordRules.unit})</label>
+                          <input type="number" value={amount} onChange={(e)=>setAmount(e.target.value)} className={`w-full border ${amount && !isAmountValid ? 'border-red-300 focus:ring-red-500 bg-red-50' : 'border-gray-300 focus:ring-indigo-500 bg-gray-50'} rounded-xl px-4 py-3 text-center text-3xl font-bold outline-none transition`} placeholder={`เช่น ${recordRules.rate}, ${recordRules.rate * 2}, ${recordRules.rate * 3}`} required/>
+                          <div className="mt-2 text-center h-10 flex items-center justify-center">
+                            {amount && !isAmountValid ? (
+                              <p className="text-[11px] font-bold text-red-500 leading-tight">
+                                กรอกตัวเลขให้ถูกต้อง (เพิ่มทีละ {recordRules.rate} เช่น {recordRules.rate}, {recordRules.rate * 2}... )<br/>
+                                ช่วงที่อนุญาต: {recordRules.minAmount} - {recordRules.maxAmount} บาท
+                              </p>
+                            ) : amount && isAmountValid ? (
+                              <p className={`text-sm font-bold ${currentTheme.text}`}>เทียบเท่ากับ: {calculatedUnits} {recordRules.unit}</p>
+                            ) : null}
+                          </div>
+                        </div>
+                        {/* ✅ อธิบายให้ผู้ใช้เข้าใจว่าปุ่มจะกดได้ก็ต่อเมื่อยอดเงินถูกต้องเท่านั้น */}
+                        <button type="submit" disabled={!amount || !isAmountValid} className={`w-full py-3.5 rounded-xl text-white font-bold flex justify-center items-center gap-2 transition-colors ${(!amount || !isAmountValid) ? 'bg-gray-300 cursor-not-allowed' : currentTheme.btnPrimary}`}>
+                          <QrCode className="w-5 h-5" /> ดำเนินการชำระเงิน
+                        </button>
+                      </form>
+                    )}
+
+                    {paymentStep === 'qr' && (
+                      <div className="text-center animate-in fade-in zoom-in duration-300 flex flex-col items-center">
+                        <p className="text-sm font-medium text-gray-500 mb-2">สแกนเพื่อชำระ {activeTab === 'room' ? 'เงินห้อง' : 'เงินฟิวทริป'}</p>
+                        <div className="bg-white p-2 inline-block border-2 border-gray-100 rounded-2xl mb-2 relative">
+                           <img 
+                            src={`https://promptpay.io/1959300030540/${parsedAmount}.png`} 
+                            alt="PromptPay QR"
+                            className={`w-40 h-40 transition-opacity ${qrTimeLeft === 0 ? 'opacity-20' : 'opacity-100'}`}
+                            />
+                           {qrTimeLeft === 0 && <div className="absolute inset-0 flex items-center justify-center"><span className="bg-red-100 text-red-600 px-3 py-1 rounded-full font-bold text-sm">หมดเวลา</span></div>}
+                        </div>
+                        <h3 className="text-2xl font-bold mb-2">฿{parsedAmount}</h3>
+                        
+                        {qrTimeLeft > 0 ? (
+                          <div className="w-full space-y-2 mt-1">
+                            {isVerifying ? (
+                              <div className="flex flex-col items-center justify-center py-4 bg-gray-50 rounded-xl border border-gray-100">
+                                <Loader2 className={`w-8 h-8 animate-spin ${currentTheme.text} mb-2`} />
+                                <span className="font-bold text-sm text-gray-600">กำลังตรวจสอบสลิป...</span>
+                              </div>
+                            ) : (
+                              <>
+                                <div className={`flex items-center justify-center gap-2 ${currentTheme.text} mb-2`}>
+                                  <Clock className="w-4 h-4" />
+                                  <span className="font-bold text-sm">เมื่อโอนแล้ว กรุณาแนบสลิป ({Math.floor(qrTimeLeft / 60)}:{(qrTimeLeft % 60).toString().padStart(2, '0')})</span>
+                                </div>
+                                <label className={`w-full py-2.5 text-white font-bold rounded-xl text-sm transition-colors cursor-pointer flex justify-center items-center gap-2 shadow-sm ${currentTheme.btnPrimary}`}>
+                                  <Upload className="w-4 h-4" />
+                                  <span>อัปโหลดสลิปเพื่อยืนยัน</span>
+                                  <input type="file" accept="image/*" onChange={handleVerifySlip} className="hidden" />
+                                </label>
+                              </>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="w-full space-y-2 mt-2">
+                            <p className="text-xs text-orange-500 mb-2">รายการถูกบันทึกไว้ในประวัติ สามารถอัปสลิปย้อนหลังได้</p>
+                            <button type="button" onClick={() => setPaymentStep('input')} className="w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-sm transition-colors">กรอกจำนวนเงินใหม่</button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {paymentStep === 'success' && (
+                      <div className="text-center py-8 animate-in zoom-in duration-300">
+                        <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                          <Check className="w-8 h-8 text-green-500" />
+                        </div>
+                        <h3 className="text-2xl font-bold text-gray-900 mb-1">ได้รับยอดโอนแล้ว!</h3>
+                        <p className="text-xs text-gray-500 mb-4">หน้าต่างจะปิดลงอัตโนมัติ<br/>(แนบสลิปเพิ่มทีหลังได้ในตารางประวัติ)</p>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Modal บันทึกรับจ่ายอื่นๆ */}
         {otherRecordModalOpen && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-2xl p-6 w-full max-w-sm animate-in zoom-in-95 duration-200 shadow-xl flex flex-col max-h-[90vh]">
               <div className="flex justify-between items-start mb-5 shrink-0">
                 <div><h3 className="text-xl font-bold">บันทึกรับ/จ่าย อื่นๆ</h3><p className="text-sm font-medium mt-1">ส่วน: <span className={currentTheme.text}>{activeTab === 'room' ? 'เงินห้อง' : 'เงินฟิวทริป'}</span></p></div>
-                <button onClick={() => setOtherRecordModalOpen(false)} className="text-gray-400 hover:text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-full p-1"><X className="w-5 h-5" /></button>
+                <button type="button" onClick={() => setOtherRecordModalOpen(false)} className="text-gray-400 hover:text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-full p-1"><X className="w-5 h-5" /></button>
               </div>
               <form onSubmit={handleRecordOther} className="space-y-4 overflow-y-auto">
                 <div className="flex gap-2 p-1 bg-gray-100 rounded-lg">
@@ -1343,7 +1468,7 @@ export default function App() {
                 </div>
                 <input type="text" value={otherDescription} onChange={(e) => setOtherDescription(e.target.value)} required placeholder="รายละเอียดรายการ" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none" />
                 
-                {/* ✅ เพิ่มช่องกรอกชื่อคนรับ/คนจ่าย */}
+                
                 <input type="text" value={otherPerson} onChange={(e) => setOtherPerson(e.target.value)} required placeholder="รับ/จ่าย กับใคร (ระบุชื่อคน หรือชื่อร้านค้า)" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none" />
                 
                 <input type="number" value={otherAmount} onChange={(e) => setOtherAmount(e.target.value)} required placeholder="จำนวนเงิน" min="1" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none" />
@@ -1368,7 +1493,7 @@ export default function App() {
                 <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
                   <Edit className={`w-5 h-5 ${currentTheme.icon}`} /> แก้ไขรายการ
                 </h3>
-                <button onClick={() => setEditModalOpen(false)} className="text-gray-400 hover:text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-full p-1 transition">
+                <button type="button" onClick={() => setEditModalOpen(false)} className="text-gray-400 hover:text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-full p-1 transition">
                   <X className="w-5 h-5" />
                 </button>
               </div>
@@ -1429,7 +1554,7 @@ export default function App() {
                 <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
                   <Bell className="w-5 h-5 text-yellow-500" /> แจ้งแก้ไขข้อมูล
                 </h3>
-                <button onClick={() => setNotifyModalOpen(false)} className="text-gray-400 hover:text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-full p-1 transition">
+                <button type="button" onClick={() => setNotifyModalOpen(false)} className="text-gray-400 hover:text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-full p-1 transition">
                   <X className="w-5 h-5" />
                 </button>
               </div>
@@ -1470,7 +1595,7 @@ export default function App() {
                   <History className={`w-5 h-5 ${currentTheme.icon}`} /> ประวัติการดำเนินการ
                 </h3>
                 <div className="flex items-center gap-3">
-                  <button onClick={() => setHistoryModalOpen(false)} className="text-gray-400 hover:text-gray-600 bg-gray-200 hover:bg-gray-300 rounded-full p-1.5 transition">
+                  <button type="button" onClick={() => setHistoryModalOpen(false)} className="text-gray-400 hover:text-gray-600 bg-gray-200 hover:bg-gray-300 rounded-full p-1.5 transition">
                     <X className="w-4 h-4" />
                   </button>
                 </div>
@@ -1482,10 +1607,9 @@ export default function App() {
                   </p>
                   <p className="text-sm text-gray-500">ส่วน: <span className="font-semibold text-gray-900">{historyTx?.fundType === 'room' ? 'เงินห้อง' : 'เงินฟิวทริป'} (เทอม {historyTx?.term})</span></p>
                   
-                  {/* ✅ ปุ่มดูสลิปแบบชัดๆ ในหน้าประวัติ */}
                   {historyTx?.slipUrl && (
                     <div className="mt-4">
-                      <button onClick={() => { setCurrentSlip(historyTx.slipUrl); setSlipModalOpen(true); }} className="w-full py-2.5 bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors shadow-sm">
+                      <button type="button" onClick={() => { setCurrentSlip(historyTx.slipUrl); setSlipModalOpen(true); }} className="w-full py-2.5 bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors shadow-sm">
                         <ImageIcon className="w-5 h-5" /> เปิดดูรูปภาพหลักฐานสลิปการโอนเงิน
                       </button>
                     </div>
@@ -1525,7 +1649,7 @@ export default function App() {
         {slipModalOpen && currentSlip && (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={() => setSlipModalOpen(false)}>
             <div className="relative max-w-xl w-full" onClick={(e) => e.stopPropagation()}>
-              <button onClick={() => setSlipModalOpen(false)} className="absolute -top-12 right-0 text-white hover:text-gray-300 transition flex items-center gap-1 font-bold"><X className="w-6 h-6" /> ปิด</button>
+              <button type="button" onClick={() => setSlipModalOpen(false)} className="absolute -top-12 right-0 text-white hover:text-gray-300 transition flex items-center gap-1 font-bold"><X className="w-6 h-6" /> ปิด</button>
               <img src={currentSlip} alt="หลักฐาน" className="w-full h-auto max-h-[80vh] object-contain rounded-xl shadow-2xl bg-black/50" />
             </div>
           </div>
