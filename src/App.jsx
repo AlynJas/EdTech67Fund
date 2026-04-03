@@ -30,7 +30,7 @@ const formatTermName = (termValue) => {
   return `ปี ${year} เทอม ${term}`;
 };
 
-// --- ปรับ Config กฎการเก็บเงินตามเงื่อนไขใหม่ ป้องกันหน้าขาวล้วน ---
+// --- ✅ ปรับ Config กฎการเก็บเงินตามเงื่อนไขใหม่ ป้องกันหน้าขาวล้วน ---
 const getTermConfig = (termStr, fundType, studentYear) => {
   if (!termStr || typeof termStr !== 'string' || !termStr.includes('/')) {
      return { allowed: false, message: 'ข้อมูลเทอมไม่ถูกต้อง', target: 0, rate: 0, weeks: 0, unit: 'สัปดาห์', minAmount: 0, maxAmount: 0 };
@@ -69,7 +69,7 @@ const getTermConfig = (termStr, fundType, studentYear) => {
 const SESSION_KEY = 'cs2_fund_session';
 const TEN_DAYS_MS = 10 * 24 * 60 * 60 * 1000;
 
-// ฟังก์ชันช่วยดึงค่าจาก LocalStorage ป้องกันหน้าขาว
+// ✅ ฟังก์ชันช่วยดึงค่าจาก LocalStorage ป้องกันหน้าขาว
 const getSafeStorage = (key, defaultVal) => {
   try {
     const val = localStorage.getItem(key);
@@ -80,7 +80,7 @@ const getSafeStorage = (key, defaultVal) => {
   }
 };
 
-// ฟังก์ชันแปลงไฟล์รูปภาพเป็น Base64 เพื่อให้บันทึกรูปใน Supabase ได้อย่างถาวรโดยไม่ต้องตั้งค่า Storage Bucket
+// ✅ ฟังก์ชันแปลงไฟล์รูปภาพเป็น Base64 เพื่อให้บันทึกรูปใน Supabase ได้อย่างถาวรโดยไม่ต้องตั้งค่า Storage Bucket
 const fileToBase64 = (file) => new Promise((resolve, reject) => {
   const reader = new FileReader();
   reader.readAsDataURL(file);
@@ -343,7 +343,7 @@ export default function App() {
     }, 300);
   };
 
-  // ระบบจัดการวันที่แบบปลอดภัย ป้องกันพังเวลาเจอข้อมูลขยะ
+  // ✅ ระบบจัดการวันที่แบบปลอดภัย ป้องกันพังเวลาเจอข้อมูลขยะ
   const formatDate = (isoString) => {
     if (!isoString) return '-';
     const d = new Date(isoString);
@@ -461,41 +461,23 @@ export default function App() {
     setVerifyingHistoryId(tx.id);
 
     try {
-      // ✅ หากไม่ได้ใช้ SlipOK และอยากอัปสลิปแมนนวลให้แสดงภาพด้วย
-      // เราใช้ fileToBase64 เพื่อเก็บรูปลงฐานข้อมูลโดยตรง
+      // แปลงรูปเป็น Base64 แล้วอัปโหลดเข้าฐานข้อมูลโดยตรงเลย (เพราะเป็นการแนบย้อนหลังแมนนวล)
       const fallbackSlipUrl = await fileToBase64(file);
 
-      const formData = new FormData();
-      formData.append('files', file);
-      const branchId = import.meta.env.VITE_SLIPOK_BRANCH_ID;
-      const apiKey = import.meta.env.VITE_SLIPOK_API_KEY;
-
-      const response = await fetch(`/slipok-api/${branchId}`, {
-        method: 'POST',
-        headers: { 'x-authorization': apiKey },
-        body: formData
-      });
-      const result = await response.json();
-
-      if (result.success === true && result.data.amount === tx.amount) {
-        const slipUrl = result.data.url || fallbackSlipUrl;
-        await supabase.from('transactions').update({ status: 'completed', slip_url: slipUrl }).eq('id', tx.id);
-        
-        setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, status: 'completed', slipUrl: slipUrl } : t));
-        setSuccessMsg(`อัปเดตสลิปย้อนหลังสำเร็จ! ยอดเงินถูกบันทึกเข้าระบบแล้ว`);
-        setTimeout(() => setSuccessMsg(''), 4000);
-      } else {
-        alert(`สลิปไม่ถูกต้อง หรือ ยอดเงินไม่ตรงกับรายการนี้!\n(รายการนี้ต้องการสลิปยอด ฿${tx.amount})`);
-      }
+      await supabase.from('transactions').update({ status: 'completed', slip_url: fallbackSlipUrl }).eq('id', tx.id);
+      
+      setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, status: 'completed', slipUrl: fallbackSlipUrl } : t));
+      setSuccessMsg(`อัปเดตสลิปย้อนหลังสำเร็จ!`);
+      setTimeout(() => setSuccessMsg(''), 4000);
     } catch (error) {
       console.error("Error:", error);
-      alert('ระบบตรวจสลิปมีปัญหา หรือไม่มีการตั้งค่า API');
+      alert('เกิดข้อผิดพลาดในการอัปโหลดรูปภาพ');
     } finally {
       setVerifyingHistoryId(null);
     }
   };
 
-  // ✅ การอัปสลิปแมนนวล โดยใช้ Base64 เพื่อให้รูปภาพคงอยู่ถาวร
+  // การอัปสลิปแมนนวล โดยใช้ Base64 เพื่อให้รูปภาพคงอยู่ถาวร
   const handleUploadSlip = async (e, txId) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -508,7 +490,7 @@ export default function App() {
     setTimeout(() => setSuccessMsg(''), 3000);
   };
 
-  // ✅ บันทึกรายรับ/รายจ่าย อื่นๆ พร้อมชื่อบุคคล/ร้านค้า และสลิป
+  // บันทึกรายรับ/รายจ่าย อื่นๆ พร้อมชื่อบุคคล/ร้านค้า และสลิป
   const handleRecordOther = async (e) => {
     e.preventDefault();
     if (!currentUser || !otherAmount || !otherDescription) return;
@@ -525,7 +507,7 @@ export default function App() {
     const newDbTx = {
       type: otherType, 
       description: otherDescription, 
-      student_name: otherPerson, // ✅ เก็บชื่อบุคคลที่เกี่ยวข้องลงในฟิลด์ student_name
+      student_name: otherPerson, // เก็บชื่อบุคคลที่เกี่ยวข้องลงในฟิลด์ student_name
       slip_url: slipUrl, 
       fund_type: activeTab,
       term: selectedTerm, 
@@ -604,11 +586,10 @@ export default function App() {
 
   const filteredStudents = activeStudents.filter(s => (s?.name || '').includes(studentSearchQuery) || String(s?.id || '').includes(studentSearchQuery));
 
-  
   const termTransactions = (transactions || []).filter(t => t?.term === selectedTerm);
   const currentFundTransactions = termTransactions.filter(t => t?.fundType === activeTab);
 
-  // ✅ ให้สถานะ success ถูกนับเป็น completed ด้วย เผื่อแอดมินแก้ไข Database เอง
+  // ให้สถานะ success ถูกนับเป็น completed ด้วย เผื่อแอดมินแก้ไข Database เอง
   const calculateNetTotal = (txs) => (txs || [])
     .filter(tx => tx?.status === 'completed' || tx?.status === 'success')
     .reduce((sum, tx) => tx?.type === 'expense' ? sum - (Number(tx?.amount) || 0) : sum + (Number(tx?.amount) || 0), 0);
@@ -1122,7 +1103,6 @@ export default function App() {
 
                             return (
                              <tr key={tx?.id} className="hover:bg-gray-50 transition-colors">
-
                                 <td className="px-4 py-3">
                                   <div className="text-[11px] text-gray-500">{formatDate(latestAction?.timestamp)}</div>
                                   <div className={`text-[10px] font-medium mt-0.5 flex items-center gap-1 ${editCount > 0 ? 'text-orange-600' : currentTheme.text}`}><span className={`w-1.5 h-1.5 rounded-full ${editCount > 0 ? 'bg-orange-400' : currentTheme.bgActive.split(' ')[0]}`}></span>{editCount > 0 ? `แก้ครั้งที่ ${editCount} โดย ${latestAction?.recordedBy || '-'}` : `โดย ${latestAction?.recordedBy || '-'}`}</div>
@@ -1131,26 +1111,29 @@ export default function App() {
                                 <td className="px-4 py-3">
                                   {tx?.type === 'student_payment' ? (
                                     <>
-                                      <div className="font-medium text-gray-900 text-sm flex items-center gap-1.5 line-clamp-1">
+                                      <div className="font-medium text-gray-900 text-sm flex items-center flex-wrap gap-1.5">
                                         {tx?.studentName}
                                         {/* ถ้ายังเป็น pending (หรือแอดมินยังไม่ได้แก้เป็น success) จะขึ้นรอหลักฐาน */}
                                         {!isPaid && (
-                                          <span className="text-[9px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-bold ml-1 whitespace-nowrap flex items-center gap-1">
+                                          <span className="text-[9px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-bold whitespace-nowrap flex items-center gap-1">
                                             <AlertCircle className="w-3 h-3"/> รอหลักฐาน
                                           </span>
                                         )}
-                                        {/* ถ้าชำระแล้ว และมีรูปสลิป ถึงจะโชว์ไอคอนรูปภาพ */}
-                                        {isPaid && tx?.slipUrl ? (
-                                          <button onClick={() => { setCurrentSlip(tx.slipUrl); setSlipModalOpen(true); }} className="text-blue-500 hover:text-blue-700 shrink-0 ml-1" title="ดูหลักฐานสลิป"><ImageIcon className="w-4 h-4" /></button>
-                                        ) : null}
+                                        {/* ✅ ปุ่มดูสลิปที่ชัดเจนขึ้นและกว้างขึ้น */}
+                                        {isPaid && tx?.slipUrl && (
+                                          <button onClick={() => { setCurrentSlip(tx.slipUrl); setSlipModalOpen(true); }} className="inline-flex items-center gap-1 bg-blue-50 text-blue-600 px-2 py-0.5 rounded text-[10px] font-bold hover:bg-blue-100 transition-colors shrink-0" title="ดูหลักฐานสลิป"><ImageIcon className="w-3 h-3" /> ดูสลิป</button>
+                                        )}
                                       </div>
                                       <div className="text-[10px] text-gray-500 font-mono mt-0.5">{tx?.studentId}</div>
                                     </>
                                   ) : (
                                     <>
-                                      <div className="font-medium text-gray-900 text-sm flex items-center gap-1.5 line-clamp-1">
+                                      <div className="font-medium text-gray-900 text-sm flex items-center flex-wrap gap-1.5">
                                         {tx?.description}
-                                        {tx?.slipUrl && <button onClick={() => { setCurrentSlip(tx.slipUrl); setSlipModalOpen(true); }} className="text-blue-500 hover:text-blue-700 shrink-0" title="ดูหลักฐานสลิป"><ImageIcon className="w-4 h-4" /></button>}
+                                        {/* ✅ ปุ่มดูสลิปที่ชัดเจนขึ้น สำหรับรายรับรายจ่ายอื่น */}
+                                        {tx?.slipUrl && (
+                                          <button onClick={() => { setCurrentSlip(tx.slipUrl); setSlipModalOpen(true); }} className="inline-flex items-center gap-1 bg-blue-50 text-blue-600 px-2 py-0.5 rounded text-[10px] font-bold hover:bg-blue-100 transition-colors shrink-0" title="ดูหลักฐานสลิป"><ImageIcon className="w-3 h-3" /> ดูสลิป</button>
+                                        )}
                                       </div>
                                       {/* ✅ แสดงชื่อผู้รับ/จ่าย ในตารางประวัติ */}
                                       {tx?.studentName && <div className="text-[10px] text-gray-500 mt-0.5 truncate">รับ/จ่ายกับ: {tx.studentName}</div>}
@@ -1443,9 +1426,17 @@ export default function App() {
                 <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
                   <History className={`w-5 h-5 ${currentTheme.icon}`} /> ประวัติการดำเนินการ
                 </h3>
-                <button onClick={() => setHistoryModalOpen(false)} className="text-gray-400 hover:text-gray-600 bg-gray-200 hover:bg-gray-300 rounded-full p-1 transition">
-                  <X className="w-5 h-5" />
-                </button>
+                <div className="flex items-center gap-3">
+                  {/* ✅ เพิ่มปุ่มดูสลิปในหน้าประวัติ */}
+                  {historyTx?.slipUrl && (
+                    <button onClick={() => { setCurrentSlip(historyTx.slipUrl); setSlipModalOpen(true); }} className="px-3 py-1.5 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors shadow-sm">
+                      <ImageIcon className="w-4 h-4" /> ดูสลิป
+                    </button>
+                  )}
+                  <button onClick={() => setHistoryModalOpen(false)} className="text-gray-400 hover:text-gray-600 bg-gray-200 hover:bg-gray-300 rounded-full p-1.5 transition">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
               <div className="p-6 overflow-y-auto flex-1">
                 <div className="mb-6 pb-4 border-b border-gray-100">
