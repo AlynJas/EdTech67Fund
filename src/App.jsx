@@ -30,7 +30,7 @@ const formatTermName = (termValue) => {
   return `ปี ${year} เทอม ${term}`;
 };
 
-
+// --- ✅ ปรับ Config กฎการเก็บเงินตามเงื่อนไขใหม่ ป้องกันหน้าขาวล้วน ---
 const getTermConfig = (termStr, fundType, studentYear) => {
   if (!termStr || typeof termStr !== 'string' || !termStr.includes('/')) {
      return { allowed: false, message: 'ข้อมูลเทอมไม่ถูกต้อง', target: 0, rate: 0, weeks: 0, unit: 'สัปดาห์', minAmount: 0, maxAmount: 0 };
@@ -334,11 +334,17 @@ export default function App() {
     }, 300);
   };
 
-  const currentYearInt = parseInt(String(selectedTerm).split('/')[0]) || 1;
-  const rules = getTermConfig(selectedTerm, activeTab, currentUser?.year || currentYearInt || 1);
-  const parsedAmount = parseFloat(amount) || 0;
-  const isAmountValid = rules.allowed && parsedAmount >= rules.minAmount && parsedAmount <= rules.maxAmount && (parsedAmount % rules.rate === 0);
-  const calculatedUnits = rules.allowed && isAmountValid ? Number((parsedAmount / rules.rate).toFixed(2)) : 0;
+  // ✅ ระบบจัดการวันที่แบบปลอดภัย ป้องกันพังเวลาเจอข้อมูลขยะ
+  const formatDate = (isoString) => {
+    if (!isoString) return '-';
+    const d = new Date(isoString);
+    return isNaN(d.getTime()) ? '-' : d.toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
+  };
+  const formatJustDate = (isoString) => {
+    if (!isoString) return '-';
+    const d = new Date(isoString);
+    return isNaN(d.getTime()) ? '-' : d.toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  };
 
   const handleGenerateQR = async (e) => {
     e.preventDefault();
@@ -550,20 +556,10 @@ export default function App() {
   };
 
   const markNotificationResolved = (id) => setNotifications((notifications || []).map(n => n?.id === id ? { ...n, status: 'resolved' } : n));
-  
-  // ✅ ระบบจัดการวันที่แบบปลอดภัย ป้องกันพังเวลาเจอข้อมูลขยะ
-  const formatDate = (isoString) => {
-    if (!isoString) return '-';
-    const d = new Date(isoString);
-    return isNaN(d.getTime()) ? '-' : d.toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
-  };
-  const formatJustDate = (isoString) => {
-    if (!isoString) return '-';
-    const d = new Date(isoString);
-    return isNaN(d.getTime()) ? '-' : d.toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  };
 
-  // --- ลอจิกกรองรายชื่อ 24 vs 23 คนตามชั้นปี (ป้องกัน null จาก DB) ---
+  // --- ลอจิกกรองข้อมูล (รวมถึงตัวแปร totalActiveFund ที่แก้ไขแล้ว) ---
+  const currentYearInt = parseInt(String(selectedTerm).split('/')[0]) || 1;
+  
   let activeStudents = [...students];
   if (currentYearInt >= 2) {
     activeStudents = students.filter(s => 
@@ -575,13 +571,21 @@ export default function App() {
 
   const filteredStudents = activeStudents.filter(s => (s?.name || '').includes(studentSearchQuery) || String(s?.id || '').includes(studentSearchQuery));
 
+  // ดึงรายการ Transaction ที่ตรงกับเทอม และ แท็บ (Room/Trip) ปัจจุบัน
+  const termTransactions = (transactions || []).filter(t => t?.term === selectedTerm);
+  const currentFundTransactions = termTransactions.filter(t => t?.fundType === activeTab);
+
+  // ✅ กู้คืนฟังก์ชันการคำนวณยอดเงินรวม (calculateNetTotal) และตัวแปร totalActiveFund
+  const calculateNetTotal = (txs) => (txs || []).filter(tx => tx?.status !== 'pending').reduce((sum, tx) => tx?.type === 'expense' ? sum - (Number(tx?.amount) || 0) : sum + (Number(tx?.amount) || 0), 0);
+  const totalActiveFund = calculateNetTotal(currentFundTransactions);
+
   const studentsWithSummary = filteredStudents.map(student => {
     const sYear = student?.year || currentYearInt || 1; 
     const sRules = getTermConfig(selectedTerm, activeTab, sYear); 
 
     let totalPaid = 0;
-    transactions.forEach(tx => {
-      if (tx?.fundType === activeTab && tx?.term === selectedTerm && tx?.status === 'completed' && String(tx?.studentId) === String(student?.id)) {
+    currentFundTransactions.forEach(tx => {
+      if (tx?.type === 'student_payment' && tx?.status === 'completed' && String(tx?.studentId) === String(student?.id)) {
         totalPaid += Number(tx?.amount) || 0;
       }
     });
@@ -593,7 +597,7 @@ export default function App() {
     const ratePerWeek = Number(sRules.rate) || 10;
     let remaining = totalPaid; 
     
-    // ป้องกันกรณี sRules.weeks ไม่มีค่า
+
     const totalWeeks = sRules.weeks || 0;
     for (let i = 1; i <= totalWeeks; i++) {
       if (remaining >= ratePerWeek) {
@@ -610,8 +614,6 @@ export default function App() {
     return { ...student, totalPaid, targetAmount, remainingAmount, weeks, allowed: sRules.allowed, message: sRules.message };
   });
 
-  const termTransactions = (transactions || []).filter(t => t?.term === selectedTerm);
-  const currentFundTransactions = termTransactions.filter(t => t?.fundType === activeTab);
 
   const filteredHistory = currentFundTransactions.filter(tx => {
     const targetName = tx?.type === 'student_payment' ? tx?.studentName : (tx?.description || '');
@@ -640,7 +642,7 @@ export default function App() {
   const termTargetTrip = (configTrip.target || 0) * expectedStudentCount;
   const termTotalTarget = termTargetRoom + termTargetTrip;
 
-  const calculateNetTotal = (txs) => (txs || []).filter(tx => tx?.status !== 'pending').reduce((sum, tx) => tx?.type === 'expense' ? sum - (Number(tx?.amount) || 0) : sum + (Number(tx?.amount) || 0), 0);
+
   const roomTransactions = termTransactions.filter(t => t?.fundType === 'room');
   const tripTransactions = termTransactions.filter(t => t?.fundType === 'trip');
   const totalRoomFundOverview = calculateNetTotal(roomTransactions);
@@ -661,10 +663,14 @@ export default function App() {
     visualPTrip = pTrip;
   }
 
-  // ✅ เปลี่ยนจาก maxWeeksInTable ไปใช้กฎตั้งต้นแทน เพื่อบังคับโชว์ตารางเสมอแม้จะยังไม่มีนักศึกษาก็ตาม
+
   const currentRules = getTermConfig(selectedTerm, activeTab, currentYearInt);
   const maxWeeksInTable = currentRules.weeks || 0;
   const isDayUnit = currentRules.unit === 'วัน';
+
+  const parsedAmount = parseFloat(amount) || 0;
+  const isAmountValid = currentRules.allowed && parsedAmount >= currentRules.minAmount && parsedAmount <= currentRules.maxAmount && (parsedAmount % currentRules.rate === 0);
+  const calculatedUnits = currentRules.allowed && isAmountValid ? Number((parsedAmount / currentRules.rate).toFixed(2)) : 0;
 
   const themeRoom = { text: 'text-purple-600', bgActive: 'bg-purple-600 text-white shadow-md', bgHover: 'hover:bg-purple-50', icon: 'text-purple-500', badge: 'bg-purple-100 text-purple-800', gradient: 'bg-gradient-to-r from-purple-500 to-fuchsia-500', btnPrimary: 'bg-purple-600 hover:bg-purple-700', lightCard: 'bg-purple-50/50 border-purple-50', donutSlice: '#a855f7' };
   const themeTrip = { text: 'text-pink-600', bgActive: 'bg-pink-600 text-white shadow-md', bgHover: 'hover:bg-pink-50', icon: 'text-pink-500', badge: 'bg-pink-100 text-pink-800', gradient: 'bg-gradient-to-r from-pink-500 to-rose-400', btnPrimary: 'bg-pink-600 hover:bg-pink-700', lightCard: 'bg-pink-50/50 border-pink-50', donutSlice: '#ec4899' };
@@ -782,17 +788,17 @@ export default function App() {
                     </div>
                     <div className="flex justify-between text-xs font-medium"><span className="text-indigo-600">เก็บแล้ว: ฿{totalAllFunds.toLocaleString()}</span><span className="text-gray-500">เป้าหมาย: ฿{termTotalTarget.toLocaleString()}</span></div>
                   </div>
-                  <div className={`${currentTheme.lightCard} rounded-xl p-4 border hover:shadow-sm transition-shadow`}>
+                  <div className={`${themeRoom.lightCard} rounded-xl p-4 border hover:shadow-sm transition-shadow`}>
                     <div className="flex justify-between items-center mb-3">
-                      <div className="flex items-center gap-3"><div className={`p-2 bg-white rounded-lg shadow-sm ${currentTheme.text}`}><Users className="w-4 h-4" /></div><span className="font-bold text-gray-800">เงินห้อง</span></div>
-                      <span className={`px-2.5 py-1 rounded-full text-xs font-bold shadow-sm ${currentTheme.badge}`}>{roomPercent.toFixed(1)}%</span>
+                      <div className="flex items-center gap-3"><div className={`p-2 bg-white rounded-lg shadow-sm ${themeRoom.text}`}><Users className="w-4 h-4" /></div><span className="font-bold text-gray-800">เงินห้อง</span></div>
+                      <span className={`px-2.5 py-1 rounded-full text-xs font-bold shadow-sm ${themeRoom.badge}`}>{roomPercent.toFixed(1)}%</span>
                     </div>
                     <div className="w-full bg-gray-200/80 rounded-full h-3 mb-2 shadow-inner overflow-hidden">
                       <div className={`bg-gradient-to-r from-purple-400 to-fuchsia-500 h-3 rounded-full transition-all duration-1000`} style={{ width: `${roomPercent}%`, minWidth: roomPercent > 0 ? '12px' : '0' }}></div>
                     </div>
-                    <div className="flex justify-between text-xs font-medium"><span className={currentTheme.text}>เก็บแล้ว: ฿{totalRoomFundOverview.toLocaleString()}</span><span className="text-gray-500">เป้าหมาย: ฿{termTargetRoom.toLocaleString()}</span></div>
+                    <div className="flex justify-between text-xs font-medium"><span className={themeRoom.text}>เก็บแล้ว: ฿{totalRoomFundOverview.toLocaleString()}</span><span className="text-gray-500">เป้าหมาย: ฿{termTargetRoom.toLocaleString()}</span></div>
                   </div>
-                  <div className={`${currentTheme.lightCard} rounded-xl p-4 border hover:shadow-sm transition-shadow`}>
+                  <div className={`${themeTrip.lightCard} rounded-xl p-4 border hover:shadow-sm transition-shadow`}>
                     <div className="flex justify-between items-center mb-3">
                       <div className="flex items-center gap-3"><div className={`p-2 bg-white rounded-lg shadow-sm text-pink-600`}><Wallet className="w-4 h-4" /></div><span className="font-bold text-gray-800">เงินฟิวทริป</span></div>
                       <span className={`px-2.5 py-1 rounded-full text-xs font-bold shadow-sm bg-pink-100 text-pink-800`}>{tripPercent.toFixed(1)}%</span>
@@ -885,7 +891,7 @@ export default function App() {
                     </div>
                   </div>
                   
-                  {/* ✅ เปลี่ยนจากการเช็คคนว่าง เป็นการเช็คกฎ เพื่อให้ตารางโชว์เสมอ */}
+
                   {!currentRules.allowed ? (
                     <div className="p-8 text-center text-gray-500 font-medium bg-gray-50">{currentRules.message}</div>
                   ) : (
@@ -1010,7 +1016,7 @@ export default function App() {
                     </div>
                   </div>
                   <div className="overflow-y-auto flex-1">
-                    {/* ✅ ปรับลอจิกซ่อนตารางให้ใช้ rules เหมือนด้านบน */}
+
                     {!currentRules.allowed ? (
                        <div className="p-8 text-center text-gray-500 font-medium">{currentRules.message}</div>
                     ) : (
@@ -1071,7 +1077,7 @@ export default function App() {
                             return (
                              <tr key={tx?.id} className="hover:bg-gray-50 transition-colors">
                                 <td className="px-4 py-3">
-                                  {/* ✅ ป้องกัน error กรณี timestamp เป็น null */}
+                                  
                                   <div className="text-[11px] text-gray-500">{formatDate(latestAction?.timestamp)}</div>
                                   <div className={`text-[10px] font-medium mt-0.5 flex items-center gap-1 ${editCount > 0 ? 'text-orange-600' : currentTheme.text}`}><span className={`w-1.5 h-1.5 rounded-full ${editCount > 0 ? 'bg-orange-400' : currentTheme.bgActive.split(' ')[0]}`}></span>{editCount > 0 ? `แก้ครั้งที่ ${editCount} โดย ${latestAction?.recordedBy || '-'}` : `โดย ${latestAction?.recordedBy || '-'}`}</div>
                                   <button onClick={() => { setHistoryTx(tx); setHistoryModalOpen(true); }} className={`text-[10px] text-gray-400 hover:${currentTheme.text} flex items-center gap-1 mt-1.5 transition-colors bg-gray-100 px-2 py-0.5 rounded`}><History className="w-3 h-3" /> ประวัติ</button>
