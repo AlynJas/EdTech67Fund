@@ -5,7 +5,7 @@ import {
   X, Bell, MessageSquare, Check, History, Target, PieChart, 
   ArrowUpCircle, ArrowDownCircle, FileText, Image as ImageIcon, 
   BookOpen, QrCode, Loader2, Upload, AlertCircle, KeyRound, Table, LayoutList,
-  Eye, EyeOff
+  Eye, EyeOff, themeRoom
 } from 'lucide-react';
 
 import { supabase } from './supabaseClient';
