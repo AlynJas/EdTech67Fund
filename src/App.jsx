@@ -325,7 +325,7 @@ export default function App() {
     }
   };
 
-  // ✅ ฟังก์ชันเปิด Modal จ่ายเงินที่ปรับปรุงให้เสถียรที่สุด
+
   const openRecordModal = (student) => {
     try {
       if (!student) return;
@@ -349,12 +349,13 @@ export default function App() {
     }, 300);
   };
 
-  // ✅ ระบบจัดการวันที่แบบปลอดภัย
+
   const formatDate = (isoString) => {
     if (!isoString) return '-';
     const d = new Date(isoString);
     return isNaN(d.getTime()) ? '-' : d.toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
   };
+  
   const formatJustDate = (isoString) => {
     if (!isoString) return '-';
     const d = new Date(isoString);
@@ -501,7 +502,6 @@ export default function App() {
     if (!currentUser || !otherAmount || !otherDescription) return;
     const newTimestamp = new Date().toISOString();
     
-
     let slipUrl = null;
     if (otherSlip) {
       slipUrl = await fileToBase64(otherSlip);
@@ -729,8 +729,8 @@ export default function App() {
               <span className="text-xl font-bold tracking-wide">EdTech<span className="text-indigo-200">Fund67</span></span>
             </div>
             <div className="flex items-center space-x-3 md:space-x-4">
-              <button onClick={() => setCurrentView('overview')} className={`px-3 md:px-4 py-2 rounded-xl transition-all font-medium text-sm md:text-base ${currentView === 'overview' ? 'bg-white/20 shadow-inner text-white' : 'hover:bg-white/10 text-indigo-100'}`}>แดชบอร์ด</button>
-              <button onClick={() => {
+              <button type="button" onClick={() => setCurrentView('overview')} className={`px-3 md:px-4 py-2 rounded-xl transition-all font-medium text-sm md:text-base ${currentView === 'overview' ? 'bg-white/20 shadow-inner text-white' : 'hover:bg-white/10 text-indigo-100'}`}>แดชบอร์ด</button>
+              <button type="button" onClick={() => {
                 setCurrentView('manage');
                 setActiveTab('room');
                 setShowTableView(false);
@@ -742,21 +742,19 @@ export default function App() {
                     <span className="font-semibold tracking-wide">{currentUser.name}</span>
                     <span className="text-[10px] bg-white/20 px-2.5 py-0.5 rounded-full mt-0.5 shadow-sm backdrop-blur-sm">{currentUser.role === 'admin_room' ? 'ผู้ดูแลห้อง' : currentUser.role === 'admin_trip' ? 'ผู้ดูแลฟิวทริป' : 'นักศึกษา'}</span>
                   </div>
-                  <button onClick={handleLogout} className="p-2 hover:bg-white/20 rounded-full transition-all" title="ออกจากระบบ">
+                  <button type="button" onClick={handleLogout} className="p-2 hover:bg-white/20 rounded-full transition-all" title="ออกจากระบบ">
                     <LogOut className="w-5 h-5 text-indigo-100 hover:text-white" />
                   </button>
                 </div>
               ) : (
-                <button onClick={() => setCurrentView('login')} className="flex items-center space-x-1 bg-white/95 text-indigo-700 px-4 py-2 rounded-full font-bold hover:bg-white hover:scale-105 transition-all shadow-md ml-2 md:ml-4">
+                <button type="button" onClick={() => setCurrentView('login')} className="flex items-center space-x-1 bg-white/95 text-indigo-700 px-4 py-2 rounded-full font-bold hover:bg-white hover:scale-105 transition-all shadow-md ml-2 md:ml-4">
                   <LogIn className="w-4 h-4" /><span className="hidden md:inline">เข้าสู่ระบบ</span>
                 </button>
               )}
             </div>
           </div>
         </div>
-      </nav>
-
-
+    </nav>
       {currentView !== 'login' && (
         <div className="bg-white border-b border-gray-200 shadow-sm sticky top-[72px] z-20">
           <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
@@ -780,7 +778,6 @@ export default function App() {
         {currentView === 'overview' && (
           <div className="space-y-8 animate-in fade-in duration-500">
             
-
             <div>
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl md:text-2xl font-bold text-gray-800 flex items-center gap-2">
@@ -804,9 +801,7 @@ export default function App() {
                    <h3 className="text-4xl font-bold relative z-10">฿{grandTotalTrip.toLocaleString()}</h3>
                 </div>
               </div>
-            </div>
-
-
+          </div>
             <div className="pt-6 border-t border-gray-200">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl md:text-2xl font-bold text-gray-800 flex items-center gap-2">
@@ -1148,7 +1143,12 @@ export default function App() {
                     <table className="w-full text-left border-collapse">
                        <thead className="bg-white sticky top-0 shadow-sm z-10">
                         <tr className="text-gray-400 text-xs uppercase tracking-wider border-b border-gray-100">
-                          <th className="px-4 py-3 font-medium">เวลา / ผู้บันทึก</th><th className="px-4 py-3 font-medium">รายการ</th><th className="px-4 py-3 font-medium text-right">ยอดเงิน</th>{currentUser && <th className="px-4 py-3 font-medium text-center">จัดการ</th>}
+                          <th className="px-4 py-3 font-medium">เวลา / ผู้บันทึก</th>
+                          <th className="px-4 py-3 font-medium">รายการ</th>
+                          <th className="px-4 py-3 font-medium text-right">ยอดเงิน</th>
+                          {/* ✅ เพิ่มคอลัมน์ หลักฐาน */}
+                          <th className="px-4 py-3 font-medium text-center">หลักฐาน</th>
+                          {currentUser && <th className="px-4 py-3 font-medium text-center">จัดการ</th>}
                         </tr>
                        </thead>
                        <tbody className="divide-y divide-gray-50">
@@ -1158,7 +1158,6 @@ export default function App() {
                             const editCount = txHistory.filter(h => h?.action === 'edit').length;
                             const latestAction = txHistory.length > 0 ? txHistory[txHistory.length - 1] : { recordedBy: tx?.recordedBy, timestamp: tx?.timestamp };
                             
-
                             const isPaid = tx?.status === 'completed' || tx?.status === 'success';
 
                             return (
@@ -1166,23 +1165,19 @@ export default function App() {
                                 <td className="px-4 py-3">
                                   <div className="text-[11px] text-gray-500">{formatDate(latestAction?.timestamp)}</div>
                                   <div className={`text-[10px] font-medium mt-0.5 flex items-center gap-1 ${editCount > 0 ? 'text-orange-600' : currentTheme.text}`}><span className={`w-1.5 h-1.5 rounded-full ${editCount > 0 ? 'bg-orange-400' : currentTheme.bgActive.split(' ')[0]}`}></span>{editCount > 0 ? `แก้ครั้งที่ ${editCount} โดย ${latestAction?.recordedBy || '-'}` : `โดย ${latestAction?.recordedBy || '-'}`}</div>
-                                  <button type="button" onClick={() => { setHistoryTx(tx); setHistoryModalOpen(true); }} className={`text-[10px] text-gray-400 hover:${currentTheme.text} flex items-center gap-1 mt-1.5 transition-colors bg-gray-100 px-2 py-0.5 rounded`}><History className="w-3 h-3" /> ประวัติ</button>
-                                </td>
+                              </td>
                                 <td className="px-4 py-3">
                                   {tx?.type === 'student_payment' ? (
                                     <>
                                       <div className="font-medium text-gray-900 text-sm flex items-center flex-wrap gap-1.5">
+                                        
                                         {tx?.studentName}
-
                                         {!isPaid && (
                                           <span className="text-[9px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-bold whitespace-nowrap flex items-center gap-1">
                                             <AlertCircle className="w-3 h-3"/> รอหลักฐาน
                                           </span>
                                         )}
 
-                                        {isPaid && tx?.slipUrl && (
-                                          <button type="button" onClick={() => { setCurrentSlip(tx.slipUrl); setSlipModalOpen(true); }} className="inline-flex items-center gap-1 bg-blue-50 text-blue-600 px-2 py-0.5 rounded text-[10px] font-bold hover:bg-blue-100 transition-colors shrink-0" title="ดูหลักฐานสลิป"><ImageIcon className="w-3 h-3" /> ดูสลิป</button>
-                                        )}
                                       </div>
                                       <div className="text-[10px] text-gray-500 font-mono mt-0.5">{tx?.studentId}</div>
                                     </>
@@ -1191,11 +1186,7 @@ export default function App() {
                                       <div className="font-medium text-gray-900 text-sm flex items-center flex-wrap gap-1.5">
                                         {tx?.description}
 
-                                        {tx?.slipUrl && (
-                                          <button type="button" onClick={() => { setCurrentSlip(tx.slipUrl); setSlipModalOpen(true); }} className="inline-flex items-center gap-1 bg-blue-50 text-blue-600 px-2 py-0.5 rounded text-[10px] font-bold hover:bg-blue-100 transition-colors shrink-0" title="ดูหลักฐานสลิป"><ImageIcon className="w-3 h-3" /> ดูสลิป</button>
-                                        )}
-                                      </div>
-                                      
+                                    </div>
                                       {tx?.studentName && <div className="text-[10px] text-gray-500 mt-0.5 truncate">รับ/จ่ายกับ: {tx.studentName}</div>}
                                       <div className={`text-[9px] inline-flex px-1.5 py-0.5 rounded font-medium mt-0.5 ${tx?.type === 'income' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{tx?.type === 'income' ? 'รับสมทบทุน' : 'จ่ายซื้อของ'}</div>
                                     </>
@@ -1206,22 +1197,45 @@ export default function App() {
                                     {tx?.type === 'expense' ? '-' : tx?.type === 'income' ? '+' : ''}฿{(tx?.amount || 0).toLocaleString()}
                                   </span>
                                 </td>
+                                
+                                {/* ✅ คอลัมน์ หลักฐาน สำหรับเปิดดูรูป (ดึงออกมาแยกให้ชัดเจน) */}
+                                <td className="px-4 py-3 text-center">
+                                  {tx?.slipUrl ? (
+                                    <button type="button" onClick={() => { setCurrentSlip(tx.slipUrl); setSlipModalOpen(true); }} className="inline-flex items-center justify-center p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors" title="ดูหลักฐานสลิป">
+                                      <ImageIcon className="w-4 h-4" />
+                                    </button>
+                                  ) : (
+                                    <span className="text-gray-300 font-bold">-</span>
+                                  )}
+                                </td>
+                                
+                                {/* ✅ คอลัมน์ จัดการ ที่เรียบร้อยขึ้น */}
                                 {currentUser && (
                                   <td className="px-4 py-3 text-center">
-                                    {!isPaid ? (
-                                       verifyingHistoryId === tx?.id ? (
-                                         <Loader2 className="w-4 h-4 animate-spin text-gray-400 mx-auto" />
-                                       ) : (
-                                         <label className="cursor-pointer inline-flex items-center gap-1 px-2 py-1.5 bg-orange-50 hover:bg-orange-100 text-orange-600 rounded-lg text-[10px] font-bold transition-colors">
-                                           <Upload className="w-3 h-3" /> อัปสลิป
-                                           <input type="file" accept="image/*" className="hidden" onChange={(e) => handleVerifySlipFromHistory(e, tx)} />
-                                         </label>
-                                       )
-                                    ) : canEdit ? (
-                                      <button type="button" onClick={() => { setEditingTx(tx); setEditAmount(tx?.amount); if (tx?.type !== 'student_payment') setEditDescription(tx?.description); setEditModalOpen(true); }} className={`p-1.5 text-gray-400 hover:${currentTheme.text} hover:bg-gray-100 rounded-lg transition-colors`}><Edit className="w-4 h-4" /></button>
-                                    ) : currentUser?.role === 'student' && tx?.type === 'student_payment' ? (
-                                      <button type="button" onClick={() => { setNotifyTx(tx); setNotifyReason(''); setNotifyModalOpen(true); }} className="p-1.5 text-gray-400 hover:text-yellow-600 hover:bg-yellow-50 rounded-lg transition-colors"><Bell className="w-4 h-4" /></button>
-                                    ) : <span className="text-[10px] text-gray-300">-</span>}
+                                    <div className="flex items-center justify-center gap-1">
+
+                                      {/* 1. ปุ่มแนบสลิป/อัปเดตสลิป (แสดงตลอดเพื่อให้เพิ่มรูปทีหลังได้) */}
+                                      {(!isPaid || !tx?.slipUrl) ? (
+                                         verifyingHistoryId === tx?.id ? (
+                                           <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                                         ) : (
+                                           <label className="cursor-pointer p-1.5 text-orange-600 hover:bg-orange-50 rounded-lg transition-colors" title={tx?.slipUrl ? "อัปเดตรูปสลิปใหม่" : "แนบรูปสลิป"}>
+                                             <Upload className="w-4 h-4" />
+                                             <input type="file" accept="image/*" className="hidden" onChange={(e) => handleVerifySlipFromHistory(e, tx)} />
+                                           </label>
+                                         )
+                                      ) : null}
+
+                                      {/* 2. ปุ่มแก้ไข (สำหรับแอดมิน) */}
+                                      {canEdit && (
+                                        <button type="button" onClick={() => { setEditingTx(tx); setEditAmount(tx?.amount); if (tx?.type !== 'student_payment') setEditDescription(tx?.description); setEditModalOpen(true); }} className={`p-1.5 text-gray-400 hover:${currentTheme.text} hover:bg-gray-100 rounded-lg transition-colors`} title="แก้ไขรายการ"><Edit className="w-4 h-4" /></button>
+                                      )}
+                                      
+                                      {/* 3. ปุ่มแจ้งปัญหา (สำหรับนักศึกษา) */}
+                                      {currentUser?.role === 'student' && tx?.type === 'student_payment' && (
+                                        <button type="button" onClick={() => { setNotifyTx(tx); setNotifyReason(''); setNotifyModalOpen(true); }} className="p-1.5 text-gray-400 hover:text-yellow-600 hover:bg-yellow-50 rounded-lg transition-colors" title="แจ้งปัญหา"><Bell className="w-4 h-4" /></button>
+                                      )}
+                                    </div>
                                   </td>
                                 )}
                              </tr>
@@ -1465,10 +1479,10 @@ export default function App() {
                 <div className="flex gap-2 p-1 bg-gray-100 rounded-lg">
                   <button type="button" onClick={() => setOtherType('income')} className={`flex-1 py-2 text-sm font-bold rounded-md flex items-center justify-center gap-1.5 transition-colors ${otherType === 'income' ? 'bg-white shadow text-emerald-600' : 'text-gray-500'}`}><ArrowUpCircle className="w-4 h-4" /> รับเข้า</button>
                   <button type="button" onClick={() => setOtherType('expense')} className={`flex-1 py-2 text-sm font-bold rounded-md flex items-center justify-center gap-1.5 transition-colors ${otherType === 'expense' ? 'bg-white shadow text-red-600' : 'text-gray-500'}`}><ArrowDownCircle className="w-4 h-4" /> จ่ายออก</button>
-                </div>
+                
+              </div>
+                
                 <input type="text" value={otherDescription} onChange={(e) => setOtherDescription(e.target.value)} required placeholder="รายละเอียดรายการ" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none" />
-                
-                
                 <input type="text" value={otherPerson} onChange={(e) => setOtherPerson(e.target.value)} required placeholder="รับ/จ่าย กับใคร (ระบุชื่อคน หรือชื่อร้านค้า)" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none" />
                 
                 <input type="number" value={otherAmount} onChange={(e) => setOtherAmount(e.target.value)} required placeholder="จำนวนเงิน" min="1" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none" />
@@ -1606,14 +1620,7 @@ export default function App() {
                     {historyTx?.type === 'student_payment' ? 'รายการของ:' : 'รายการ:'} <span className="font-semibold text-gray-900">{historyTx?.type === 'student_payment' ? historyTx?.studentName : historyTx?.description}</span>
                   </p>
                   <p className="text-sm text-gray-500">ส่วน: <span className="font-semibold text-gray-900">{historyTx?.fundType === 'room' ? 'เงินห้อง' : 'เงินฟิวทริป'} (เทอม {historyTx?.term})</span></p>
-                  
-                  {historyTx?.slipUrl && (
-                    <div className="mt-4">
-                      <button type="button" onClick={() => { setCurrentSlip(historyTx.slipUrl); setSlipModalOpen(true); }} className="w-full py-2.5 bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors shadow-sm">
-                        <ImageIcon className="w-5 h-5" /> เปิดดูรูปภาพหลักฐานสลิปการโอนเงิน
-                      </button>
-                    </div>
-                  )}
+                
                 </div>
                 
                 <div className="space-y-6 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-gray-200 before:to-transparent">
