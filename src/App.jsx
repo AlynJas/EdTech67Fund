@@ -80,7 +80,7 @@ const getSafeStorage = (key, defaultVal) => {
   }
 };
 
-// ✅ ฟังก์ชันแปลงไฟล์รูปภาพเป็น Base64
+// ✅ ฟังก์ชันแปลงไฟล์รูปภาพเป็น Base64 (สำหรับการเก็บรูปในฐานข้อมูลโดยตรง)
 const fileToBase64 = (file) => new Promise((resolve, reject) => {
   const reader = new FileReader();
   reader.readAsDataURL(file);
@@ -618,8 +618,8 @@ export default function App() {
     const sRules = getTermConfig(selectedTerm, activeTab, sYear); 
 
     let totalPaid = 0;
+    
     currentFundTransactions.forEach(tx => {
-      
       if (tx?.type === 'student_payment' && (tx?.status === 'completed' || tx?.status === 'success') && String(tx?.studentId) === String(student?.id)) {
         totalPaid += Number(tx?.amount) || 0;
       }
@@ -714,8 +714,8 @@ export default function App() {
   const currentTheme = activeTab === 'room' ? themeRoom : themeTrip;
 
   return (
+
     <div className="min-h-screen bg-gray-50 text-gray-800 font-sans pb-12">
-      
       <style>{`
         input[type="password"]::-ms-reveal,
         input[type="password"]::-ms-clear { display: none; }
@@ -754,7 +754,8 @@ export default function App() {
             </div>
           </div>
         </div>
-    </nav>
+      </nav>
+
       {currentView !== 'login' && (
         <div className="bg-white border-b border-gray-200 shadow-sm sticky top-[72px] z-20">
           <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
@@ -801,7 +802,8 @@ export default function App() {
                    <h3 className="text-4xl font-bold relative z-10">฿{grandTotalTrip.toLocaleString()}</h3>
                 </div>
               </div>
-          </div>
+            </div>
+
             <div className="pt-6 border-t border-gray-200">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl md:text-2xl font-bold text-gray-800 flex items-center gap-2">
@@ -1165,12 +1167,14 @@ export default function App() {
                                 <td className="px-4 py-3">
                                   <div className="text-[11px] text-gray-500">{formatDate(latestAction?.timestamp)}</div>
                                   <div className={`text-[10px] font-medium mt-0.5 flex items-center gap-1 ${editCount > 0 ? 'text-orange-600' : currentTheme.text}`}><span className={`w-1.5 h-1.5 rounded-full ${editCount > 0 ? 'bg-orange-400' : currentTheme.bgActive.split(' ')[0]}`}></span>{editCount > 0 ? `แก้ครั้งที่ ${editCount} โดย ${latestAction?.recordedBy || '-'}` : `โดย ${latestAction?.recordedBy || '-'}`}</div>
-                              </td>
+                                  {/* ✅ กู้คืนปุ่มดูประวัติ */}
+                                  <button type="button" onClick={() => { setHistoryTx(tx); setHistoryModalOpen(true); }} className={`text-[10px] text-gray-400 hover:${currentTheme.text} flex items-center gap-1 mt-1.5 transition-colors bg-gray-100 px-2 py-0.5 rounded`}><History className="w-3 h-3" /> ประวัติ</button>
+                                </td>
                                 <td className="px-4 py-3">
                                   {tx?.type === 'student_payment' ? (
                                     <>
+
                                       <div className="font-medium text-gray-900 text-sm flex items-center flex-wrap gap-1.5">
-                                        
                                         {tx?.studentName}
                                         {!isPaid && (
                                           <span className="text-[9px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-bold whitespace-nowrap flex items-center gap-1">
@@ -1185,8 +1189,7 @@ export default function App() {
                                     <>
                                       <div className="font-medium text-gray-900 text-sm flex items-center flex-wrap gap-1.5">
                                         {tx?.description}
-
-                                    </div>
+                                      </div>
                                       {tx?.studentName && <div className="text-[10px] text-gray-500 mt-0.5 truncate">รับ/จ่ายกับ: {tx.studentName}</div>}
                                       <div className={`text-[9px] inline-flex px-1.5 py-0.5 rounded font-medium mt-0.5 ${tx?.type === 'income' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{tx?.type === 'income' ? 'รับสมทบทุน' : 'จ่ายซื้อของ'}</div>
                                     </>
@@ -1479,12 +1482,9 @@ export default function App() {
                 <div className="flex gap-2 p-1 bg-gray-100 rounded-lg">
                   <button type="button" onClick={() => setOtherType('income')} className={`flex-1 py-2 text-sm font-bold rounded-md flex items-center justify-center gap-1.5 transition-colors ${otherType === 'income' ? 'bg-white shadow text-emerald-600' : 'text-gray-500'}`}><ArrowUpCircle className="w-4 h-4" /> รับเข้า</button>
                   <button type="button" onClick={() => setOtherType('expense')} className={`flex-1 py-2 text-sm font-bold rounded-md flex items-center justify-center gap-1.5 transition-colors ${otherType === 'expense' ? 'bg-white shadow text-red-600' : 'text-gray-500'}`}><ArrowDownCircle className="w-4 h-4" /> จ่ายออก</button>
-                
-              </div>
-                
+                </div>
                 <input type="text" value={otherDescription} onChange={(e) => setOtherDescription(e.target.value)} required placeholder="รายละเอียดรายการ" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none" />
                 <input type="text" value={otherPerson} onChange={(e) => setOtherPerson(e.target.value)} required placeholder="รับ/จ่าย กับใคร (ระบุชื่อคน หรือชื่อร้านค้า)" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none" />
-                
                 <input type="number" value={otherAmount} onChange={(e) => setOtherAmount(e.target.value)} required placeholder="จำนวนเงิน" min="1" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none" />
                 <div>
                   <label className="flex items-center justify-center gap-2 w-full border-2 border-dashed border-gray-300 rounded-lg px-3 py-3 hover:bg-gray-50 cursor-pointer transition">
@@ -1620,7 +1620,15 @@ export default function App() {
                     {historyTx?.type === 'student_payment' ? 'รายการของ:' : 'รายการ:'} <span className="font-semibold text-gray-900">{historyTx?.type === 'student_payment' ? historyTx?.studentName : historyTx?.description}</span>
                   </p>
                   <p className="text-sm text-gray-500">ส่วน: <span className="font-semibold text-gray-900">{historyTx?.fundType === 'room' ? 'เงินห้อง' : 'เงินฟิวทริป'} (เทอม {historyTx?.term})</span></p>
-                
+                  
+                  {/* ✅ ปุ่มดูสลิปแบบชัดๆ ในหน้าประวัติ */}
+                  {historyTx?.slipUrl && (
+                    <div className="mt-4">
+                      <button type="button" onClick={() => { setCurrentSlip(historyTx.slipUrl); setSlipModalOpen(true); }} className="w-full py-2.5 bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors shadow-sm">
+                        <ImageIcon className="w-5 h-5" /> เปิดดูรูปภาพหลักฐานสลิปการโอนเงิน
+                      </button>
+                    </div>
+                  )}
                 </div>
                 
                 <div className="space-y-6 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-gray-200 before:to-transparent">
