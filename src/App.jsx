@@ -151,6 +151,7 @@ export default function App() {
   const [otherAmount, setOtherAmount] = useState('');
   const [otherDescription, setOtherDescription] = useState('');
   const [otherPerson, setOtherPerson] = useState(''); 
+  const [otherDate, setOtherDate] = useState('');
   const [otherSlip, setOtherSlip] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [notifyModalOpen, setNotifyModalOpen] = useState(false);
@@ -479,6 +480,21 @@ export default function App() {
     }
   };
 
+  // ✅ เพิ่มฟังก์ชันนี้เข้ามาใหม่
+  const openOtherRecordModal = () => {
+    const today = new Date();
+    // แปลงเวลาให้เป็นโซนเวลาปัจจุบัน (Local) ป้องกันวันที่คลาดเคลื่อน
+    const localDate = new Date(today.getTime() - (today.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+    
+    setOtherType('income');
+    setOtherAmount('');
+    setOtherDescription('');
+    setOtherPerson('');
+    setOtherDate(localDate); // ✅ เซ็ตค่าเริ่มต้นเป็นวันที่ปัจจุบัน
+    setOtherSlip(null);
+    setOtherRecordModalOpen(true);
+  };
+
   const handleVerifySlipFromHistory = async (e, tx) => {
     const file = e.target.files[0]; 
     if (!file) return;
@@ -505,12 +521,18 @@ export default function App() {
 
   const handleRecordOther = async (e) => {
     e.preventDefault();
-    if (!currentUser || !otherAmount || !otherDescription) return;
-    const newTimestamp = new Date().toISOString();
-    
+    if (!currentUser || !otherAmount || !otherDescription || !otherDate) return;
+ 
+    let newTimestamp = new Date().toISOString();
+    if (otherDate) {
+      const selectedD = new Date(otherDate);
+      const now = new Date();
+      selectedD.setHours(now.getHours(), now.getMinutes(), now.getSeconds());
+      newTimestamp = selectedD.toISOString();
+    }
     let slipUrl = null;
     if (otherSlip) {
-      slipUrl = await fileToBase64(otherSlip);
+      slipUrl = await compressImage(otherSlip);
     }
     
     const historyData = [{ action: 'create', amount: parseFloat(otherAmount), description: otherDescription, recordedBy: currentUser.name, timestamp: newTimestamp }];
@@ -1040,7 +1062,7 @@ export default function App() {
                         <input type="text" placeholder="ค้นหารายการ..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white" />
                       </div>
                       {currentUser && currentUser.role === `admin_${activeTab}` && (
-                        <button type="button" onClick={() => { setOtherType('income'); setOtherAmount(''); setOtherDescription(''); setOtherPerson(''); setOtherSlip(null); setOtherRecordModalOpen(true); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"><PlusCircle className="w-3.5 h-3.5" /> เพิ่มรายการ</button>
+                        <button type="button" onClick={openOtherRecordModal} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"><PlusCircle className="w-3.5 h-3.5" /> เพิ่มรายการ</button>
                       )}
                     </div>
                   </div>
@@ -1133,7 +1155,7 @@ export default function App() {
                     <div className="flex justify-between items-center mb-3">
                       <h3 className="font-semibold text-lg text-gray-800 flex items-center gap-2"><Clock className={`w-5 h-5 ${currentTheme.icon}`} /> ประวัติรายการ</h3>
                       {currentUser && currentUser?.role === `admin_${activeTab}` && (
-                        <button type="button" onClick={() => { setOtherType('income'); setOtherAmount(''); setOtherDescription(''); setOtherPerson(''); setOtherSlip(null); setOtherRecordModalOpen(true); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-900 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"><PlusCircle className="w-3.5 h-3.5" /> รับ/จ่ายอื่น</button>
+                        <button type="button" onClick={openOtherRecordModal} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-900 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"><PlusCircle className="w-3.5 h-3.5" /> รับ/จ่ายอื่น</button>
                       )}
                     </div>
                     <div className="flex gap-2">
@@ -1488,6 +1510,16 @@ export default function App() {
                 <div className="flex gap-2 p-1 bg-gray-100 rounded-lg">
                   <button type="button" onClick={() => setOtherType('income')} className={`flex-1 py-2 text-sm font-bold rounded-md flex items-center justify-center gap-1.5 transition-colors ${otherType === 'income' ? 'bg-white shadow text-emerald-600' : 'text-gray-500'}`}><ArrowUpCircle className="w-4 h-4" /> รับเข้า</button>
                   <button type="button" onClick={() => setOtherType('expense')} className={`flex-1 py-2 text-sm font-bold rounded-md flex items-center justify-center gap-1.5 transition-colors ${otherType === 'expense' ? 'bg-white shadow text-red-600' : 'text-gray-500'}`}><ArrowDownCircle className="w-4 h-4" /> จ่ายออก</button>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">วันที่ทำรายการ</label>
+                  <input 
+                    type="date" 
+                    value={otherDate} 
+                    onChange={(e) => setOtherDate(e.target.value)} 
+                    required 
+                    className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none text-gray-700" 
+                  />
                 </div>
                 <input type="text" value={otherDescription} onChange={(e) => setOtherDescription(e.target.value)} required placeholder="รายละเอียดรายการ" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none" />
                 <input type="text" value={otherPerson} onChange={(e) => setOtherPerson(e.target.value)} required placeholder="รับ/จ่าย กับใคร (ระบุชื่อคน หรือชื่อร้านค้า)" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none" />
