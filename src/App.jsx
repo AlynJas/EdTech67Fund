@@ -16,6 +16,9 @@ const STUDENT_ADMINS = {
   '6720117261': 'admin_trip'  // แอดมินฟิวทริป
 };
 
+const PROMPTPAY_ROOM = "1959300030540";
+const PROMPTPAY_TRIP = "0812345678";
+
 const LEFT_STUDENTS = [
   '6720117049'
 ];
@@ -90,7 +93,7 @@ const fileToBase64 = (file) => new Promise((resolve, reject) => {
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
-  
+
   
   const [currentView, setCurrentView] = useState(() => getSafeStorage('cs2_currentView', 'overview')); 
   const [activeTab, setActiveTab] = useState(() => getSafeStorage('cs2_activeTab', 'room')); 
@@ -429,6 +432,8 @@ export default function App() {
     if (qrTimerRef.current) clearInterval(qrTimerRef.current);
 
     try {
+      const base64Slip = await fileToBase64(file);
+      
       const formData = new FormData();
       formData.append('files', file);
 
@@ -1416,7 +1421,7 @@ export default function App() {
                         <p className="text-sm font-medium text-gray-500 mb-2">สแกนเพื่อชำระ {activeTab === 'room' ? 'เงินห้อง' : 'เงินฟิวทริป'}</p>
                         <div className="bg-white p-2 inline-block border-2 border-gray-100 rounded-2xl mb-2 relative">
                            <img 
-                            src={`https://promptpay.io/1959300030540/${parsedAmount}.png`} 
+                            src={`https://promptpay.io/${activeTab === 'room' ? PROMPTPAY_ROOM : PROMPTPAY_TRIP}/${parsedAmount}.png`} 
                             alt="PromptPay QR"
                             className={`w-40 h-40 transition-opacity ${qrTimeLeft === 0 ? 'opacity-20' : 'opacity-100'}`}
                             />
