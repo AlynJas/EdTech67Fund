@@ -433,7 +433,7 @@ export default function App() {
 
     try {
       const base64Slip = await fileToBase64(file);
-      
+
       const formData = new FormData();
       formData.append('files', file);
 
@@ -454,7 +454,7 @@ export default function App() {
         setPaymentStep('success'); 
         
         const slipUrl = result.data ? result.data.url : null;
-        await supabase.from('transactions').update({ status: 'completed', slip_url: slipUrl }).eq('id', pendingTxId);
+        await supabase.from('transactions').update({ status: 'completed', slip_url: base64Slip }).eq('id', pendingTxId);
 
         setTransactions(prev => prev.map(t => t.id === pendingTxId ? { ...t, status: 'completed', slipUrl: slipUrl } : t));
 
