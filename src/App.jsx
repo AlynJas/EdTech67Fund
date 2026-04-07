@@ -16,6 +16,7 @@ const STUDENT_ADMINS = {
   '6720117261': 'admin_trip'  // แอดมินฟิวทริป
 };
 
+
 const PROMPTPAY_ROOM = "1959300030540";
 const PROMPTPAY_TRIP = "0812345678";
 
@@ -83,18 +84,43 @@ const getSafeStorage = (key, defaultVal) => {
   }
 };
 
-// ✅ ฟังก์ชันแปลงไฟล์รูปภาพเป็น Base64 (สำหรับการเก็บรูปในฐานข้อมูลโดยตรง)
-const fileToBase64 = (file) => new Promise((resolve, reject) => {
-  const reader = new FileReader();
-  reader.readAsDataURL(file);
-  reader.onload = () => resolve(reader.result);
-  reader.onerror = error => reject(error);
-});
+// ✅ ฟังก์ชันย่อขนาดรูปและแปลงเป็น Base64 (แก้ปัญหา Supabase แอบบล็อกไฟล์ภาพใหญ่เกินไป และรูปหาย)
+const compressImage = (file) => {
+  return new Promise((resolve, reject) => {
+    if (!file) return resolve(null);
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target.result;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 800; // บีบความกว้างภาพไม่ให้เกิน 800px เพื่อลดขนาดไฟล์
+        let width = img.width;
+        let height = img.height;
+
+        if (width > MAX_WIDTH) {
+          height *= MAX_WIDTH / width;
+          width = MAX_WIDTH;
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        // บีบอัดภาพเป็น JPEG ลดคุณภาพเหลือ 60% เพื่อให้ไฟล์เล็กที่สุดโดยที่ยังอ่านออก
+        resolve(canvas.toDataURL('image/jpeg', 0.6));
+      };
+      img.onerror = (e) => reject(e);
+    };
+    reader.onerror = (e) => reject(e);
+  });
+};
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
 
-  
   const [currentView, setCurrentView] = useState(() => getSafeStorage('cs2_currentView', 'overview')); 
   const [activeTab, setActiveTab] = useState(() => getSafeStorage('cs2_activeTab', 'room')); 
   const [selectedTerm, setSelectedTerm] = useState(() => {
@@ -328,10 +354,14 @@ export default function App() {
     }
   };
 
-
+  // ✅ ฟังก์ชันเปิด Modal จ่ายเงินที่แก้ไขให้คลิกได้ 100% ไม่มีปัญหาปุ่มนิ่ง
   const openRecordModal = (student) => {
+    console.log("Opening modal for:", student);
     try {
-      if (!student) return;
+      if (!student) {
+        alert("ข้อผิดพลาด: ไม่พบข้อมูลนักศึกษา");
+        return;
+      }
       setRecordTarget(student);
       setAmount('');
       setPaymentStep('input');
@@ -339,6 +369,7 @@ export default function App() {
       setRecordModalOpen(true);
     } catch (e) {
       console.error("Error opening payment modal:", e);
+      alert("เกิดข้อผิดพลาดในการเปิดหน้าต่างชำระเงิน: " + e.message);
     }
   };
 
@@ -351,7 +382,6 @@ export default function App() {
       setPendingTxId(null);
     }, 300);
   };
-
 
   const formatDate = (isoString) => {
     if (!isoString) return '-';
@@ -369,12 +399,11 @@ export default function App() {
     e.preventDefault();
     if (!currentUser || !recordTarget) return; 
 
-
     const targetStudentYear = recordTarget?.year || parseInt(String(selectedTerm).split('/')[0]) || 1;
     const recordRules = getTermConfig(selectedTerm, activeTab, targetStudentYear);
     
     const parsedAmount = parseFloat(amount) || 0;
-    const isAmountValid = recordRules.allowed && parsedAmount >= recordRules.minAmount && parsedAmount <= recordRules.maxAmount && (parsedAmount % recordRules.rate === 0);
+    const isAmountValid = recordRules?.allowed && parsedAmount >= recordRules.minAmount && parsedAmount <= recordRules.maxAmount && (parsedAmount % recordRules.rate === 0);
 
     if (!isAmountValid) {
       alert("ยอดเงินไม่ถูกต้องตามเงื่อนไข");
@@ -432,13 +461,20 @@ export default function App() {
     if (qrTimerRef.current) clearInterval(qrTimerRef.current);
 
     try {
-      const base64Slip = await fileToBase64(file);
+      // ✅ แปลงภาพสลิปที่แนบให้เป็น Base64 ย่อขนาดไว้เลย (รูปจะได้ไม่หายและไม่ถูกบล็อก)
+      const compressedBase64Slip = await compressImage(file);
 
       const formData = new FormData();
       formData.append('files', file);
 
-      const branchId = import.meta.env.VITE_SLIPOK_BRANCH_ID;
-      const apiKey = import.meta.env.VITE_SLIPOK_API_KEY;
+      // เลือกรหัส API สาขาตามบัญชี (ห้อง หรือ ทริป)
+      const isRoom = activeTab === 'room';
+      const branchId = isRoom 
+        ? (import.meta.env.VITE_SLIPOK_BRANCH_ID_ROOM || import.meta.env.VITE_SLIPOK_BRANCH_ID) 
+        : (import.meta.env.VITE_SLIPOK_BRANCH_ID_TRIP || import.meta.env.VITE_SLIPOK_BRANCH_ID);
+      const apiKey = isRoom 
+        ? (import.meta.env.VITE_SLIPOK_API_KEY_ROOM || import.meta.env.VITE_SLIPOK_API_KEY) 
+        : (import.meta.env.VITE_SLIPOK_API_KEY_TRIP || import.meta.env.VITE_SLIPOK_API_KEY);
 
       const response = await fetch(`/slipok-api/${branchId}`, {
         method: 'POST',
@@ -447,16 +483,20 @@ export default function App() {
       });
       const result = await response.json();
 
-
       const currentParsedAmount = parseFloat(amount) || 0;
 
       if (result.success === true && result.data.amount === currentParsedAmount) {
-        setPaymentStep('success'); 
         
-        const slipUrl = result.data ? result.data.url : null;
-        await supabase.from('transactions').update({ status: 'completed', slip_url: base64Slip }).eq('id', pendingTxId);
+        // ✅ บันทึกรูป Base64 ลง Supabase ตรงๆ
+        const { error } = await supabase.from('transactions').update({ status: 'completed', slip_url: compressedBase64Slip }).eq('id', pendingTxId);
+        
+        if (error) {
+          console.error("DB Upload Error:", error);
+          alert('สลิปถูกต้อง แต่ไม่สามารถบันทึกรูปลงฐานข้อมูลได้ กรุณาแนบรูปซ้ำในหน้าประวัติ');
+        }
 
-        setTransactions(prev => prev.map(t => t.id === pendingTxId ? { ...t, status: 'completed', slipUrl: slipUrl } : t));
+        setPaymentStep('success'); 
+        setTransactions(prev => prev.map(t => t.id === pendingTxId ? { ...t, status: 'completed', slipUrl: compressedBase64Slip } : t));
 
         setSuccessMsg(`โอนเงินสำเร็จ! บันทึกยอด ฿${currentParsedAmount} ให้ ${recordTarget?.name || ''} แล้ว`);
 
@@ -471,7 +511,7 @@ export default function App() {
       }
     } catch (error) {
       console.error("Error verifying slip:", error);
-      alert('เกิดข้อผิดพลาดในการเชื่อมต่อกับระบบตรวจสลิป กรุณาลองใหม่');
+      alert('เกิดข้อผิดพลาดในการเชื่อมต่อกับระบบตรวจสลิป (SlipOK)');
       setPaymentStep('qr');
     } finally {
       setIsVerifying(false);
@@ -485,12 +525,18 @@ export default function App() {
     setVerifyingHistoryId(tx.id);
 
     try {
+      // ✅ ใช้ระบบบีบอัดภาพเพื่อแนบสลิปย้อนหลัง
+      const compressedFallbackSlipUrl = await compressImage(file);
 
-      const fallbackSlipUrl = await fileToBase64(file);
-
-      await supabase.from('transactions').update({ status: 'completed', slip_url: fallbackSlipUrl }).eq('id', tx.id);
+      const { error } = await supabase.from('transactions').update({ status: 'completed', slip_url: compressedFallbackSlipUrl }).eq('id', tx.id);
       
-      setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, status: 'completed', slipUrl: fallbackSlipUrl } : t));
+      if (error) {
+         console.error("DB History Upload Error:", error);
+         alert("อัปเดตฐานข้อมูลล้มเหลว: " + error.message);
+         return;
+      }
+
+      setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, status: 'completed', slipUrl: compressedFallbackSlipUrl } : t));
       setSuccessMsg(`อัปเดตสลิปย้อนหลังสำเร็จ!`);
       setTimeout(() => setSuccessMsg(''), 4000);
     } catch (error) {
@@ -501,7 +547,6 @@ export default function App() {
     }
   };
 
-
   const handleRecordOther = async (e) => {
     e.preventDefault();
     if (!currentUser || !otherAmount || !otherDescription) return;
@@ -509,7 +554,8 @@ export default function App() {
     
     let slipUrl = null;
     if (otherSlip) {
-      slipUrl = await fileToBase64(otherSlip);
+      // ✅ บีบอัดรูปก่อนแนบรายการรับจ่ายอื่น
+      slipUrl = await compressImage(otherSlip);
     }
     
     const historyData = [{ action: 'create', amount: parseFloat(otherAmount), description: otherDescription, recordedBy: currentUser.name, timestamp: newTimestamp }];
@@ -528,7 +574,13 @@ export default function App() {
       status: 'completed'
     };
 
-    const { data } = await supabase.from('transactions').insert([newDbTx]).select();
+    const { data, error } = await supabase.from('transactions').insert([newDbTx]).select();
+
+    if (error) {
+       console.error("DB Insert Error:", error);
+       alert("บันทึกรายการไม่สำเร็จ: " + error.message);
+       return;
+    }
 
     if (data && data.length > 0) {
       const formattedTx = { ...data[0], studentName: data[0].student_name, fundType: data[0].fund_type, recordedBy: data[0].recorded_by, slipUrl: data[0].slip_url, status: 'completed' };
@@ -558,15 +610,19 @@ export default function App() {
 
     const { error } = await supabase.from('transactions').update(updateData).eq('id', editingTx.id);
 
-    if (!error) {
-      const updatedTx = transactions.map(t => {
-        if (t.id === editingTx.id) return { ...t, ...updateData };
-        return t;
-      });
-      setTransactions(updatedTx);
+    if (error) {
+      alert("แก้ไขข้อมูลไม่สำเร็จ: " + error.message);
+      return;
     }
 
-    setEditModalOpen(false); setSuccessMsg('แก้ไขข้อมูลสำเร็จ!'); setTimeout(() => setSuccessMsg(''), 3000);
+    const updatedTx = transactions.map(t => {
+      if (t.id === editingTx.id) return { ...t, ...updateData };
+      return t;
+    });
+    setTransactions(updatedTx);
+    setEditModalOpen(false); 
+    setSuccessMsg('แก้ไขข้อมูลสำเร็จ!'); 
+    setTimeout(() => setSuccessMsg(''), 3000);
   };
 
   const handleNotifySubmit = (e) => {
@@ -623,7 +679,7 @@ export default function App() {
     const sRules = getTermConfig(selectedTerm, activeTab, sYear); 
 
     let totalPaid = 0;
-    
+
     currentFundTransactions.forEach(tx => {
       if (tx?.type === 'student_payment' && (tx?.status === 'completed' || tx?.status === 'success') && String(tx?.studentId) === String(student?.id)) {
         totalPaid += Number(tx?.amount) || 0;
@@ -675,8 +731,8 @@ export default function App() {
   const expectedStudentCount = currentYearInt === 1 ? targetCounts.year1 : targetCounts.year2;
 
   const configRoom = getTermConfig(selectedTerm, 'room', currentYearInt);
+  
   const configTrip = getTermConfig(selectedTerm, 'trip', currentYearInt);
-
   const termTargetRoom = (configRoom.target || 0) * expectedStudentCount;
   const termTargetTrip = (configTrip.target || 0) * expectedStudentCount;
   const termTotalTarget = termTargetRoom + termTargetTrip;
@@ -711,19 +767,20 @@ export default function App() {
   const targetStudentYear = recordTarget?.year || currentYearInt || 1;
   const recordRules = getTermConfig(selectedTerm, activeTab, targetStudentYear);
   const parsedAmount = parseFloat(amount) || 0;
-  const isAmountValid = recordRules.allowed && parsedAmount >= recordRules.minAmount && parsedAmount <= recordRules.maxAmount && (parsedAmount % recordRules.rate === 0);
-  const calculatedUnits = recordRules.allowed && isAmountValid ? Number((parsedAmount / recordRules.rate).toFixed(2)) : 0;
+  const isAmountValid = recordRules?.allowed && parsedAmount >= recordRules?.minAmount && parsedAmount <= recordRules?.maxAmount && (parsedAmount % recordRules?.rate === 0);
+  const calculatedUnits = recordRules?.allowed && isAmountValid ? Number((parsedAmount / recordRules.rate).toFixed(2)) : 0;
 
   const themeRoom = { text: 'text-purple-600', bgActive: 'bg-purple-600 text-white shadow-md', bgHover: 'hover:bg-purple-50', icon: 'text-purple-500', badge: 'bg-purple-100 text-purple-800', gradient: 'bg-gradient-to-r from-purple-500 to-fuchsia-500', btnPrimary: 'bg-purple-600 hover:bg-purple-700', lightCard: 'bg-purple-50/50 border-purple-50', donutSlice: '#a855f7' };
   const themeTrip = { text: 'text-pink-600', bgActive: 'bg-pink-600 text-white shadow-md', bgHover: 'hover:bg-pink-50', icon: 'text-pink-500', badge: 'bg-pink-100 text-pink-800', gradient: 'bg-gradient-to-r from-pink-500 to-rose-400', btnPrimary: 'bg-pink-600 hover:bg-pink-700', lightCard: 'bg-pink-50/50 border-pink-50', donutSlice: '#ec4899' };
   const currentTheme = activeTab === 'room' ? themeRoom : themeTrip;
 
   return (
-
     <div className="min-h-screen bg-gray-50 text-gray-800 font-sans pb-12">
       <style>{`
         input[type="password"]::-ms-reveal,
-        input[type="password"]::-ms-clear { display: none; }
+        input[type="password"]::-ms-clear,
+        input[type="password"]::-webkit-contacts-auto-fill-button,
+        input[type="password"]::-webkit-credentials-auto-fill-button { display: none !important; }
       `}</style>
       
       <nav className="bg-gradient-to-r from-indigo-800 via-indigo-600 to-violet-600 text-white shadow-lg sticky top-0 z-30">
@@ -1009,8 +1066,8 @@ export default function App() {
                               {currentUser && (
                                 <td className="px-4 py-3 border text-center bg-white sticky right-0 shadow-sm">
                                   {s?.allowed ? (
-                                    <button type="button" onClick={(e) => { e.preventDefault(); openRecordModal(s); }} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors bg-gray-100 hover:bg-gray-200 ${currentTheme.text} inline-flex items-center gap-1`}>
-                                      <PlusCircle className="w-3.5 h-3.5" /> จ่ายเงิน
+                                    <button type="button" onClick={() => openRecordModal(s)} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors bg-gray-100 hover:bg-gray-200 ${currentTheme.text} inline-flex items-center gap-1 relative z-10`}>
+                                      <PlusCircle className="w-3.5 h-3.5 pointer-events-none" /> <span className="pointer-events-none">จ่ายเงิน</span>
                                     </button>
                                   ) : <span className="text-gray-300 text-xs">-</span>}
                                 </td>
@@ -1117,8 +1174,17 @@ export default function App() {
                               <td className="px-4 py-4 text-center font-bold text-indigo-600">ปี {s?.year || currentYearInt || 1}</td>
                               <td className="px-4 py-4 text-right"><span className={`font-bold ${(s?.totalPaid || 0)>0?'text-green-600':'text-gray-300'}`}>฿{(s?.totalPaid || 0).toLocaleString()}</span></td>
                               <td className="px-4 py-4 text-right">{(s?.remainingAmount || 0)>0 && s?.allowed?<span className="font-semibold text-red-500 text-sm">฿{(s?.remainingAmount || 0).toLocaleString()}</span>:(s?.allowed?<span className="font-semibold text-emerald-500 text-sm inline-flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> ครบ</span>:<span className="text-sm text-gray-400">-</span>)}</td>
+                              
                               {/* ✅ ปุ่มจ่ายเงิน ในมุมมองกริด */}
-                              {currentUser && <td className="px-4 py-4 text-center">{s?.allowed ? <button type="button" onClick={(e) => { e.preventDefault(); openRecordModal(s); }} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors bg-gray-100 hover:bg-gray-200 ${currentTheme.text} inline-flex items-center gap-1`}><PlusCircle className="w-3.5 h-3.5" /> จ่ายเงิน</button> : <span className="text-gray-300 text-xs">-</span>}</td>}
+                              {currentUser && (
+                                <td className="px-4 py-4 text-center">
+                                  {s?.allowed ? (
+                                    <button type="button" onClick={() => openRecordModal(s)} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors bg-gray-100 hover:bg-gray-200 ${currentTheme.text} inline-flex items-center gap-1 cursor-pointer relative z-10`}>
+                                      <PlusCircle className="w-3.5 h-3.5 pointer-events-none" /> <span className="pointer-events-none">จ่ายเงิน</span>
+                                    </button>
+                                  ) : <span className="text-gray-300 text-xs">-</span>}
+                                </td>
+                              )}
                             </tr>
                           ))}
                         </tbody>
@@ -1172,13 +1238,12 @@ export default function App() {
                                 <td className="px-4 py-3">
                                   <div className="text-[11px] text-gray-500">{formatDate(latestAction?.timestamp)}</div>
                                   <div className={`text-[10px] font-medium mt-0.5 flex items-center gap-1 ${editCount > 0 ? 'text-orange-600' : currentTheme.text}`}><span className={`w-1.5 h-1.5 rounded-full ${editCount > 0 ? 'bg-orange-400' : currentTheme.bgActive.split(' ')[0]}`}></span>{editCount > 0 ? `แก้ครั้งที่ ${editCount} โดย ${latestAction?.recordedBy || '-'}` : `โดย ${latestAction?.recordedBy || '-'}`}</div>
-                                  {/* ✅ กู้คืนปุ่มดูประวัติ */}
+                                  {/* ✅ ปุ่มดูประวัติ */}
                                   <button type="button" onClick={() => { setHistoryTx(tx); setHistoryModalOpen(true); }} className={`text-[10px] text-gray-400 hover:${currentTheme.text} flex items-center gap-1 mt-1.5 transition-colors bg-gray-100 px-2 py-0.5 rounded`}><History className="w-3 h-3" /> ประวัติ</button>
                                 </td>
                                 <td className="px-4 py-3">
                                   {tx?.type === 'student_payment' ? (
                                     <>
-
                                       <div className="font-medium text-gray-900 text-sm flex items-center flex-wrap gap-1.5">
                                         {tx?.studentName}
                                         {!isPaid && (
@@ -1186,7 +1251,6 @@ export default function App() {
                                             <AlertCircle className="w-3 h-3"/> รอหลักฐาน
                                           </span>
                                         )}
-
                                       </div>
                                       <div className="text-[10px] text-gray-500 font-mono mt-0.5">{tx?.studentId}</div>
                                     </>
@@ -1206,7 +1270,7 @@ export default function App() {
                                   </span>
                                 </td>
                                 
-                                {/* ✅ คอลัมน์ หลักฐาน สำหรับเปิดดูรูป (ดึงออกมาแยกให้ชัดเจน) */}
+                                {/* ✅ คอลัมน์ หลักฐาน สำหรับเปิดดูรูป */}
                                 <td className="px-4 py-3 text-center">
                                   {tx?.slipUrl ? (
                                     <button type="button" onClick={() => { setCurrentSlip(tx.slipUrl); setSlipModalOpen(true); }} className="inline-flex items-center justify-center p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors" title="ดูหลักฐานสลิป">
@@ -1222,7 +1286,7 @@ export default function App() {
                                   <td className="px-4 py-3 text-center">
                                     <div className="flex items-center justify-center gap-1">
 
-                                      {/* 1. ปุ่มแนบสลิป/อัปเดตสลิป (แสดงตลอดเพื่อให้เพิ่มรูปทีหลังได้) */}
+                                      {/* 1. ปุ่มแนบสลิป/อัปเดตสลิป */}
                                       {(!isPaid || !tx?.slipUrl) ? (
                                          verifyingHistoryId === tx?.id ? (
                                            <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
@@ -1257,223 +1321,7 @@ export default function App() {
             )}
           </div>
         )}
-
-        {/* LOGIN VIEW */}
-        {currentView === 'login' && !currentUser && (
-           <div className="max-w-md mx-auto mt-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
-             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
-               <div className="text-center mb-8">
-                 <div className="mx-auto bg-indigo-100 w-16 h-16 rounded-full flex items-center justify-center mb-4"><ShieldAlert className="w-8 h-8 text-indigo-600" /></div>
-                 <h2 className="text-2xl font-bold text-gray-800">เข้าสู่ระบบ</h2>
-                 <p className="text-gray-500 mt-2 text-sm">ล็อกอินเพื่อบันทึกข้อมูลและจัดการระบบ</p>
-               </div>
-               
-               {loginError && <p className="bg-red-50 text-red-600 p-3 rounded-lg text-sm text-center border border-red-100 mb-6 font-medium">{loginError}</p>}
-               
-               <form onSubmit={handleLogin} className="space-y-5">
-                 <div>
-                   <label className="block text-sm font-medium text-gray-700 mb-1">รหัสนักศึกษา</label>
-                   <input type="text" value={username} onChange={(e)=>setUsername(e.target.value)} placeholder="6720117***" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none transition" required/>
-                 </div>
-                 <div>
-                   <label className="block text-sm font-medium text-gray-700 mb-1">รหัสผ่าน (Password)</label>
-                   <div className="relative">
-                     <input type={showLoginPassword ? "text" : "password"} value={password} onChange={(e)=>setPassword(e.target.value)} placeholder="8 ตัวขึ้นไป" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 pr-12 focus:ring-2 focus:ring-indigo-500 outline-none transition" required/>
-                     <button type="button" onClick={() => setShowLoginPassword(!showLoginPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors">
-                       {showLoginPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                     </button>
-                   </div>
-                 </div>
-                 
-                 <div className="flex justify-end items-center mt-2">
-                   <button type="button" onClick={() => setCpModalOpen(true)} className="text-sm text-indigo-600 hover:text-indigo-800 font-bold transition-colors">
-                     เปลี่ยนรหัสผ่าน?
-                   </button>
-                 </div>
-
-
-                 <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-all shadow-sm">เข้าสู่ระบบ</button>
-               </form>
-
-               {/* กล่องรหัสทดสอบ เพิ่มพื้นหลังให้เด่นขึ้น */}
-               <div className="mt-8 pt-6 border-t border-gray-100">
-                 <div className="bg-indigo-50/70 p-4 rounded-xl border border-indigo-100">
-                   <p className="text-sm font-bold text-indigo-900 mb-2 flex items-center gap-1.5"><LogIn className="w-4 h-4"/> ข้อมูลบัญชีแอดมิน:</p>
-                   <ul className="text-sm text-indigo-800 space-y-1.5 ml-1">
-                     <li>รหัสนักศึกษา <span className="text-indigo-400 mx-1">/</span> 'password'</li>
-                     <li><span className="text-indigo-400 mx-1">*กรุณาเปลี่ยนรหัสผ่านเพื่อความปลอดภัย และสิทธิ์ของตนเอง</span></li>
-                   </ul>
-                 </div>
-               </div>
-
-             </div>
-           </div>
-        )}
-
-        {/* --- MODALS --- */}
         
-        {/* Modal เปลี่ยนรหัสผ่าน */}
-        {cpModalOpen && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-2xl p-6 w-full max-w-sm animate-in zoom-in-95 duration-200 shadow-xl flex flex-col">
-              <div className="flex justify-between items-start mb-5">
-                <div className="flex items-center gap-2">
-                  <KeyRound className="w-5 h-5 text-indigo-600" />
-                  <h3 className="text-lg font-bold text-gray-900">เปลี่ยนรหัสผ่าน</h3>
-                </div>
-                <button type="button" onClick={() => setCpModalOpen(false)} className="text-gray-400 hover:text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-full p-1 transition"><X className="w-5 h-5" /></button>
-              </div>
-              
-              {cpError && <p className="bg-red-50 text-red-600 p-3 rounded-lg text-sm text-center border border-red-100 mb-4 font-medium">{cpError}</p>}
-              {cpSuccess && <p className="bg-green-50 text-green-600 p-3 rounded-lg text-sm text-center border border-green-100 mb-4 font-medium flex items-center gap-2 justify-center"><CheckCircle2 className="w-4 h-4"/> {cpSuccess}</p>}
-
-              <form onSubmit={submitChangePassword} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">รหัสนักศึกษา (Username)</label>
-                  <input type="text" value={cpUsername} onChange={(e) => setCpUsername(e.target.value)} required placeholder="เช่น 65001" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none transition" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">รหัสผ่านเดิม</label>
-                  <div className="relative">
-                    <input type={showCpOldPassword ? "text" : "password"} value={cpOldPassword} onChange={(e) => setCpOldPassword(e.target.value)} required placeholder="รหัสผ่านปัจจุบัน" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 pr-12 focus:ring-2 focus:ring-indigo-500 outline-none transition" />
-                    <button type="button" onClick={() => setShowCpOldPassword(!showCpOldPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                      {showCpOldPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                    </button>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">รหัสผ่านใหม่ (8 ตัวอักษรขึ้นไป)</label>
-                  <div className="relative">
-                    <input type={showCpNewPassword ? "text" : "password"} value={cpNewPassword} onChange={(e) => setCpNewPassword(e.target.value)} required placeholder="รหัสผ่านใหม่" minLength="8" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 pr-12 focus:ring-2 focus:ring-indigo-500 outline-none transition" />
-                    <button type="button" onClick={() => setShowCpNewPassword(!showCpNewPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                      {showCpNewPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                    </button>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">ยืนยันรหัสผ่านใหม่</label>
-                  <div className="relative">
-                    <input type={showCpConfirmPassword ? "text" : "password"} value={cpConfirmPassword} onChange={(e) => setCpConfirmPassword(e.target.value)} required placeholder="ยืนยันรหัสผ่านใหม่อีกครั้ง" minLength="8" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 pr-12 focus:ring-2 focus:ring-indigo-500 outline-none transition" />
-                    <button type="button" onClick={() => setShowCpConfirmPassword(!showCpConfirmPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                      {showCpConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                    </button>
-                  </div>
-                </div>
-                <button type="submit" disabled={!!cpSuccess} className={`w-full text-white font-bold py-3 rounded-xl flex justify-center items-center gap-2 shadow-sm transition-colors ${cpSuccess ? 'bg-gray-400' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
-                  ยืนยันการเปลี่ยนรหัสผ่าน
-                </button>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* Payment Modal (QR Code & Processing) */}
-        {recordModalOpen && recordTarget && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-2xl w-full max-w-[340px] shadow-2xl overflow-hidden relative flex flex-col max-h-[90vh]">
-              
-              <button type="button" onClick={closeRecordModal} className="absolute top-3 right-3 z-10 w-8 h-8 flex items-center justify-center bg-black/20 hover:bg-black/40 text-white rounded-full transition-colors">
-                <X className="w-5 h-5" />
-              </button>
-
-              <div className={`px-6 py-4 pt-5 flex justify-center items-center ${currentTheme.gradient} text-white shrink-0`}>
-                <h3 className="text-lg font-bold">บันทึกชำระเงิน</h3>
-              </div>
-              
-              <div className="p-5 overflow-y-auto">
-                <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 mb-4 flex items-center gap-3">
-                  <div className={`p-2.5 rounded-full ${currentTheme.lightCard}`}><Users className={`w-5 h-5 ${currentTheme.icon}`} /></div>
-                  <div>
-                    <p className="font-bold text-gray-900 leading-tight">{recordTarget.name}</p>
-                    <p className="text-xs text-gray-500 font-mono mt-0.5">รหัส: {recordTarget.id} | {formatTermName(selectedTerm)}</p>
-                  </div>
-                </div>
-
-                {!recordRules.allowed ? (
-                  <div className="bg-red-50 text-red-600 p-4 rounded-xl text-center border border-red-100"><ShieldAlert className="w-8 h-8 mx-auto mb-2" /><p className="font-bold">{recordRules.message}</p></div>
-                ) : (
-                  <>
-                    {paymentStep === 'input' && (
-                      <form onSubmit={handleGenerateQR} className="space-y-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 text-center mb-2">จำนวนเงิน ({recordRules.rate}บ./{recordRules.unit})</label>
-                          <input type="number" value={amount} onChange={(e)=>setAmount(e.target.value)} className={`w-full border ${amount && !isAmountValid ? 'border-red-300 focus:ring-red-500 bg-red-50' : 'border-gray-300 focus:ring-indigo-500 bg-gray-50'} rounded-xl px-4 py-3 text-center text-3xl font-bold outline-none transition`} placeholder={`เช่น ${recordRules.rate}, ${recordRules.rate * 2}, ${recordRules.rate * 3}`} required/>
-                          <div className="mt-2 text-center h-10 flex items-center justify-center">
-                            {amount && !isAmountValid ? (
-                              <p className="text-[11px] font-bold text-red-500 leading-tight">
-                                กรอกตัวเลขให้ถูกต้อง (เพิ่มทีละ {recordRules.rate} เช่น {recordRules.rate}, {recordRules.rate * 2}... )<br/>
-                                ช่วงที่อนุญาต: {recordRules.minAmount} - {recordRules.maxAmount} บาท
-                              </p>
-                            ) : amount && isAmountValid ? (
-                              <p className={`text-sm font-bold ${currentTheme.text}`}>เทียบเท่ากับ: {calculatedUnits} {recordRules.unit}</p>
-                            ) : null}
-                          </div>
-                        </div>
-                        {/* ✅ อธิบายให้ผู้ใช้เข้าใจว่าปุ่มจะกดได้ก็ต่อเมื่อยอดเงินถูกต้องเท่านั้น */}
-                        <button type="submit" disabled={!amount || !isAmountValid} className={`w-full py-3.5 rounded-xl text-white font-bold flex justify-center items-center gap-2 transition-colors ${(!amount || !isAmountValid) ? 'bg-gray-300 cursor-not-allowed' : currentTheme.btnPrimary}`}>
-                          <QrCode className="w-5 h-5" /> ดำเนินการชำระเงิน
-                        </button>
-                      </form>
-                    )}
-
-                    {paymentStep === 'qr' && (
-                      <div className="text-center animate-in fade-in zoom-in duration-300 flex flex-col items-center">
-                        <p className="text-sm font-medium text-gray-500 mb-2">สแกนเพื่อชำระ {activeTab === 'room' ? 'เงินห้อง' : 'เงินฟิวทริป'}</p>
-                        <div className="bg-white p-2 inline-block border-2 border-gray-100 rounded-2xl mb-2 relative">
-                           <img 
-                            src={`https://promptpay.io/${activeTab === 'room' ? PROMPTPAY_ROOM : PROMPTPAY_TRIP}/${parsedAmount}.png`} 
-                            alt="PromptPay QR"
-                            className={`w-40 h-40 transition-opacity ${qrTimeLeft === 0 ? 'opacity-20' : 'opacity-100'}`}
-                            />
-                           {qrTimeLeft === 0 && <div className="absolute inset-0 flex items-center justify-center"><span className="bg-red-100 text-red-600 px-3 py-1 rounded-full font-bold text-sm">หมดเวลา</span></div>}
-                        </div>
-                        <h3 className="text-2xl font-bold mb-2">฿{parsedAmount}</h3>
-                        
-                        {qrTimeLeft > 0 ? (
-                          <div className="w-full space-y-2 mt-1">
-                            {isVerifying ? (
-                              <div className="flex flex-col items-center justify-center py-4 bg-gray-50 rounded-xl border border-gray-100">
-                                <Loader2 className={`w-8 h-8 animate-spin ${currentTheme.text} mb-2`} />
-                                <span className="font-bold text-sm text-gray-600">กำลังตรวจสอบสลิป...</span>
-                              </div>
-                            ) : (
-                              <>
-                                <div className={`flex items-center justify-center gap-2 ${currentTheme.text} mb-2`}>
-                                  <Clock className="w-4 h-4" />
-                                  <span className="font-bold text-sm">เมื่อโอนแล้ว กรุณาแนบสลิป ({Math.floor(qrTimeLeft / 60)}:{(qrTimeLeft % 60).toString().padStart(2, '0')})</span>
-                                </div>
-                                <label className={`w-full py-2.5 text-white font-bold rounded-xl text-sm transition-colors cursor-pointer flex justify-center items-center gap-2 shadow-sm ${currentTheme.btnPrimary}`}>
-                                  <Upload className="w-4 h-4" />
-                                  <span>อัปโหลดสลิปเพื่อยืนยัน</span>
-                                  <input type="file" accept="image/*" onChange={handleVerifySlip} className="hidden" />
-                                </label>
-                              </>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="w-full space-y-2 mt-2">
-                            <p className="text-xs text-orange-500 mb-2">รายการถูกบันทึกไว้ในประวัติ สามารถอัปสลิปย้อนหลังได้</p>
-                            <button type="button" onClick={() => setPaymentStep('input')} className="w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-sm transition-colors">กรอกจำนวนเงินใหม่</button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {paymentStep === 'success' && (
-                      <div className="text-center py-8 animate-in zoom-in duration-300">
-                        <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                          <Check className="w-8 h-8 text-green-500" />
-                        </div>
-                        <h3 className="text-2xl font-bold text-gray-900 mb-1">ได้รับยอดโอนแล้ว!</h3>
-                        <p className="text-xs text-gray-500 mb-4">หน้าต่างจะปิดลงอัตโนมัติ<br/>(แนบสลิปเพิ่มทีหลังได้ในตารางประวัติ)</p>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Modal บันทึกรับจ่ายอื่นๆ */}
         {otherRecordModalOpen && (
