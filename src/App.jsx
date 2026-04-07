@@ -18,7 +18,7 @@ const STUDENT_ADMINS = {
 
 
 const PROMPTPAY_ROOM = "1959300030540";
-const PROMPTPAY_TRIP = "0812345678";
+const PROMPTPAY_TRIP = "004999215415711";
 
 const LEFT_STUDENTS = [
   '6720117049'
@@ -425,6 +425,14 @@ export default function App() {
       setPaymentStep('input');
     }
   };
+
+      const isRoom = activeTab === 'room';
+      const branchId = isRoom 
+        ? (import.meta.env.VITE_SLIPOK_BRANCH_ID_ROOM || import.meta.env.VITE_SLIPOK_BRANCH_ID) 
+        : (import.meta.env.VITE_SLIPOK_BRANCH_ID_TRIP || import.meta.env.VITE_SLIPOK_BRANCH_ID);
+      const apiKey = isRoom 
+        ? (import.meta.env.VITE_SLIPOK_API_KEY_ROOM || import.meta.env.VITE_SLIPOK_API_KEY) 
+        : (import.meta.env.VITE_SLIPOK_API_KEY_TRIP || import.meta.env.VITE_SLIPOK_API_KEY);
 
   const handleVerifySlip = async (e) => {
     const file = e.target.files[0]; 
