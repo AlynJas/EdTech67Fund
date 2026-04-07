@@ -84,6 +84,40 @@ const getSafeStorage = (key, defaultVal) => {
   }
 };
 
+const generatePromptPayPayload = (id, amount) => {
+  const target = String(id).replace(/[^0-9]/g, '');
+  let merchantInfo = "";
+  
+  if (target.length >= 15) {
+    merchantInfo = "0016A0000006770101120315" + target.substring(0, 15);
+  } else if (target.length >= 13) {
+    merchantInfo = "0016A0000006770101110213" + target.substring(0, 13);
+  } else if (target.length >= 10) {
+    merchantInfo = "0016A00000067701011101130066" + target.substring(1, 10);
+  } else {
+    merchantInfo = "0016A00000067701011101130066" + target.padStart(9, '0');
+  }
+  
+  let payload = "00020101021229" + merchantInfo.length.toString().padStart(2, '0') + merchantInfo + "5802TH5303764";
+  
+  if (amount > 0) {
+    const amtStr = parseFloat(amount).toFixed(2);
+    payload += "54" + amtStr.length.toString().padStart(2, '0') + amtStr;
+  }
+  
+  payload += "6304";
+  
+  let crc = 0xFFFF;
+  for (let i = 0; i < payload.length; i++) {
+    crc ^= payload.charCodeAt(i) << 8;
+    for (let j = 0; j < 8; j++) {
+      if ((crc & 0x8000) !== 0) crc = (crc << 1) ^ 0x1021;
+      else crc = crc << 1;
+    }
+  }
+  return payload + (crc & 0xFFFF).toString(16).toUpperCase().padStart(4, '0');
+};
+
 // ✅ ฟังก์ชันแปลงไฟล์รูปภาพเป็น Base64 (สำหรับการเก็บรูปในฐานข้อมูลโดยตรง)
 const fileToBase64 = (file) => new Promise((resolve, reject) => {
   const reader = new FileReader();
@@ -748,6 +782,10 @@ export default function App() {
   const themeRoom = { text: 'text-purple-600', bgActive: 'bg-purple-600 text-white shadow-md', bgHover: 'hover:bg-purple-50', icon: 'text-purple-500', badge: 'bg-purple-100 text-purple-800', gradient: 'bg-gradient-to-r from-purple-500 to-fuchsia-500', btnPrimary: 'bg-purple-600 hover:bg-purple-700', lightCard: 'bg-purple-50/50 border-purple-50', donutSlice: '#a855f7' };
   const themeTrip = { text: 'text-pink-600', bgActive: 'bg-pink-600 text-white shadow-md', bgHover: 'hover:bg-pink-50', icon: 'text-pink-500', badge: 'bg-pink-100 text-pink-800', gradient: 'bg-gradient-to-r from-pink-500 to-rose-400', btnPrimary: 'bg-pink-600 hover:bg-pink-700', lightCard: 'bg-pink-50/50 border-pink-50', donutSlice: '#ec4899' };
   const currentTheme = activeTab === 'room' ? themeRoom : themeTrip;
+
+  const targetPromptPayNumber = activeTab === 'room' ? PROMPTPAY_ROOM : PROMPTPAY_TRIP;
+  const qrPayloadStr = generatePromptPayPayload(targetPromptPayNumber, amount);
+  const finalQrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(qrPayloadStr)}`;
 
   return (
 
@@ -1452,7 +1490,7 @@ export default function App() {
                         <p className="text-sm font-medium text-gray-500 mb-2">สแกนเพื่อชำระ {activeTab === 'room' ? 'เงินห้อง' : 'เงินฟิวทริป'}</p>
                         <div className="bg-white p-2 inline-block border-2 border-gray-100 rounded-2xl mb-2 relative">
                            <img 
-                            src={`https://promptpay.io/${activeTab === 'room' ? PROMPTPAY_ROOM : PROMPTPAY_TRIP}/${parsedAmount}.png`} 
+                            src={finalQrImageUrl} 
                             alt="PromptPay QR"
                             className={`w-40 h-40 transition-opacity ${qrTimeLeft === 0 ? 'opacity-20' : 'opacity-100'}`}
                             />
