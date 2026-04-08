@@ -1127,9 +1127,15 @@ export default function App() {
                               {currentUser && (
                                 <td className="px-4 py-3 border text-center bg-white sticky right-0 shadow-sm">
                                   {s?.allowed ? (
-                                    <button type="button" onClick={(e) => { e.preventDefault(); openRecordModal(s); }} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors bg-gray-100 hover:bg-gray-200 ${currentTheme.text} inline-flex items-center gap-1`}>
-                                      <PlusCircle className="w-3.5 h-3.5" /> จ่ายเงิน
-                                    </button>
+                                    s.remainingAmount <= 0 ? (
+                                      <button type="button" disabled className="px-3 py-1.5 text-xs font-bold rounded-lg bg-gray-50 text-gray-400 cursor-not-allowed inline-flex items-center gap-1">
+                                        <CheckCircle2 className="w-3.5 h-3.5" /> ครบแล้ว
+                                      </button>
+                                    ) : (
+                                      <button type="button" onClick={(e) => { e.preventDefault(); openRecordModal(s); }} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors bg-gray-100 hover:bg-gray-200 ${currentTheme.text} inline-flex items-center gap-1`}>
+                                        <PlusCircle className="w-3.5 h-3.5 pointer-events-none" /> <span className="pointer-events-none">จ่ายเงิน</span>
+                                      </button>
+                                    )
                                   ) : <span className="text-gray-300 text-xs">-</span>}
                                 </td>
                               )}
@@ -1260,8 +1266,21 @@ export default function App() {
                               <td className="px-4 py-4 text-center font-bold text-indigo-600">ปี {s?.year || currentYearInt || 1}</td>
                               <td className="px-4 py-4 text-right"><span className={`font-bold ${(s?.totalPaid || 0)>0?'text-green-600':'text-gray-300'}`}>฿{(s?.totalPaid || 0).toLocaleString()}</span></td>
                               <td className="px-4 py-4 text-right">{(s?.remainingAmount || 0)>0 && s?.allowed?<span className="font-semibold text-red-500 text-sm">฿{(s?.remainingAmount || 0).toLocaleString()}</span>:(s?.allowed?<span className="font-semibold text-emerald-500 text-sm inline-flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> ครบ</span>:<span className="text-sm text-gray-400">-</span>)}</td>
-                              {/* ✅ ปุ่มจ่ายเงิน ในมุมมองกริด */}
-                              {currentUser && <td className="px-4 py-4 text-center">{s?.allowed ? <button type="button" onClick={(e) => { e.preventDefault(); openRecordModal(s); }} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors bg-gray-100 hover:bg-gray-200 ${currentTheme.text} inline-flex items-center gap-1`}><PlusCircle className="w-3.5 h-3.5" /> จ่ายเงิน</button> : <span className="text-gray-300 text-xs">-</span>}</td>}
+                              {currentUser && (
+                                <td className="px-4 py-4 text-center">
+                                  {s?.allowed ? (
+                                    s.remainingAmount <= 0 ? (
+                                      <button type="button" disabled className="px-3 py-1.5 text-xs font-bold rounded-lg bg-gray-50 text-gray-400 cursor-not-allowed inline-flex items-center gap-1 relative z-10">
+                                        <CheckCircle2 className="w-3.5 h-3.5" /> ครบแล้ว
+                                      </button>
+                                    ) : (
+                                      <button type="button" onClick={(e) => { e.preventDefault(); openRecordModal(s); }} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors bg-gray-100 hover:bg-gray-200 ${currentTheme.text} inline-flex items-center gap-1 cursor-pointer relative z-10`}>
+                                        <PlusCircle className="w-3.5 h-3.5 pointer-events-none" /> <span className="pointer-events-none">จ่ายเงิน</span>
+                                      </button>
+                                    )
+                                  ) : <span className="text-gray-300 text-xs">-</span>}
+                                </td>
+                              )}
                             </tr>
                           ))}
                         </tbody>
