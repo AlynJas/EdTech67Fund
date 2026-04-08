@@ -783,6 +783,11 @@ export default function App() {
   const themeTrip = { text: 'text-pink-600', bgActive: 'bg-pink-600 text-white shadow-md', bgHover: 'hover:bg-pink-50', icon: 'text-pink-500', badge: 'bg-pink-100 text-pink-800', gradient: 'bg-gradient-to-r from-pink-500 to-rose-400', btnPrimary: 'bg-pink-600 hover:bg-pink-700', lightCard: 'bg-pink-50/50 border-pink-50', donutSlice: '#ec4899' };
   const currentTheme = activeTab === 'room' ? themeRoom : themeTrip;
 
+  const targetTotalStudentPayment = (currentRules?.target || 0) * (studentsWithSummary.length || 0);
+  const collectedStudentPayment = studentsWithSummary.reduce((sum, s) => sum + (s.totalPaid || 0), 0);
+  const totalOtherIncome = otherTransactionsList.filter(t => t?.type === 'income').reduce((sum, t) => sum + (Number(t?.amount) || 0), 0);
+  const totalOtherExpense = otherTransactionsList.filter(t => t?.type === 'expense').reduce((sum, t) => sum + (Number(t?.amount) || 0), 0);
+
   const targetPromptPayNumber = activeTab === 'room' ? PROMPTPAY_ROOM : PROMPTPAY_TRIP;
   const qrPayloadStr = generatePromptPayPayload(targetPromptPayNumber, amount);
   const finalQrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(qrPayloadStr)}`;
@@ -1086,9 +1091,34 @@ export default function App() {
                               )}
                             </tr>
                           ))}
+                          {/* ✅ 2. ชุดโค้ดสรุปท้ายตารางใหม่ (4 บรรทัด) */}
+                          <tr className="bg-blue-50/50">
+                            <td colSpan="4" className="px-4 py-2.5 text-right font-bold border border-gray-300 text-blue-900">
+                              เป้าหมายเงินเก็บสมาชิก ({studentsWithSummary.length} คน × ฿{currentRules?.target || 0})
+                            </td>
+                            <td className="px-4 py-2.5 text-right font-bold border border-gray-300 text-blue-700">
+                              ฿{targetTotalStudentPayment.toLocaleString()}
+                            </td>
+                            <td colSpan={currentUser ? maxWeeksInTable + 1 : maxWeeksInTable} className="px-4 py-2.5 border border-gray-300 bg-gray-50 text-gray-600 font-medium">
+                              <span className="text-emerald-600">เก็บได้จริง: ฿{collectedStudentPayment.toLocaleString()}</span> 
+                              <span className="mx-3 text-gray-300">|</span> 
+                              <span className="text-red-500">ค้างชำระ: ฿{Math.max(0, targetTotalStudentPayment - collectedStudentPayment).toLocaleString()}</span>
+                            </td>
+                          </tr>
                           <tr className="bg-emerald-50">
-                            <td colSpan="4" className="px-4 py-3 text-right font-bold border border-gray-300 text-emerald-900">รวมรับทั้งหมด:</td>
-                            <td colSpan={currentUser ? maxWeeksInTable + 2 : maxWeeksInTable + 1} className="px-4 py-3 text-left font-bold border border-gray-300 text-emerald-800">฿{totalActiveFund.toLocaleString()}</td>
+                            <td colSpan="4" className="px-4 py-2 text-right font-bold border border-gray-300 text-emerald-900">รวมรายรับอื่นๆ (เทอมนี้)</td>
+                            <td className="px-4 py-2 text-right font-bold border border-gray-300 text-emerald-600">+ ฿{totalOtherIncome.toLocaleString()}</td>
+                            <td colSpan={currentUser ? maxWeeksInTable + 1 : maxWeeksInTable} className="border border-gray-300 bg-gray-50"></td>
+                          </tr>
+                          <tr className="bg-rose-50">
+                            <td colSpan="4" className="px-4 py-2 text-right font-bold border border-gray-300 text-rose-900">รวมรายจ่ายอื่นๆ (เทอมนี้)</td>
+                            <td className="px-4 py-2 text-right font-bold border border-gray-300 text-rose-600">- ฿{totalOtherExpense.toLocaleString()}</td>
+                            <td colSpan={currentUser ? maxWeeksInTable + 1 : maxWeeksInTable} className="border border-gray-300 bg-gray-50"></td>
+                          </tr>
+                          <tr className="bg-indigo-100">
+                            <td colSpan="4" className="px-4 py-3 text-right font-black border border-gray-300 text-indigo-900 text-base">ยอดเงินสุทธิ (เทอมนี้)</td>
+                            <td className="px-4 py-3 text-right font-black border border-gray-300 text-indigo-700 text-base">฿{totalActiveFund.toLocaleString()}</td>
+                            <td colSpan={currentUser ? maxWeeksInTable + 1 : maxWeeksInTable} className="border border-gray-300 bg-gray-50"></td>
                           </tr>
                         </tbody>
                       </table>
