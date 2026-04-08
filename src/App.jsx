@@ -126,6 +126,50 @@ const fileToBase64 = (file) => new Promise((resolve, reject) => {
   reader.onerror = error => reject(error);
 });
 
+const compressImage = (file) => {
+  return new Promise((resolve, reject) => {
+    if (!file) return resolve(null);
+    if (!file.type.match(/image.*/)) {
+      alert('กรุณาเลือกไฟล์รูปภาพเท่านั้น');
+      return resolve(null);
+    }
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target.result;
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 800; 
+          let width = img.width;
+          let height = img.height;
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.6));
+        } catch (e) {
+          console.error("Canvas compression error:", e);
+          resolve(event.target.result); 
+        }
+      };
+      img.onerror = (e) => {
+        console.error("Image load error:", e);
+        resolve(event.target.result); 
+      };
+    };
+    reader.onerror = (e) => {
+      console.error("FileReader error:", e);
+      reject(new Error("อ่านไฟล์ภาพไม่สำเร็จ"));
+    };
+  });
+};
+
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
 
