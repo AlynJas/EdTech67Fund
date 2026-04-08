@@ -1643,7 +1643,7 @@ export default function App() {
                 </div>
                 <input type="text" value={otherDescription} onChange={(e) => setOtherDescription(e.target.value)} required placeholder="รายละเอียดรายการ" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none" />
                 <input type="text" value={otherPerson} onChange={(e) => setOtherPerson(e.target.value)} required placeholder="รับ/จ่าย กับใคร (ระบุชื่อคน หรือชื่อร้านค้า)" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none" />
-                <input type="number" value={otherAmount} onChange={(e) => setOtherAmount(e.target.value)} required placeholder="จำนวนเงิน" min="1" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                <input type="number" value={otherAmount} onChange={(e) => setOtherAmount(e.target.value)} required placeholder="จำนวนเงิน" min="0.01" step="0.01" className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none" />
                 <div>
                   <label className="flex items-center justify-center gap-2 w-full border-2 border-dashed border-gray-300 rounded-lg px-3 py-3 hover:bg-gray-50 cursor-pointer transition">
                     <FileText className="w-5 h-5 text-gray-400" />
@@ -1704,6 +1704,7 @@ export default function App() {
                     onChange={(e) => setEditAmount(e.target.value)}
                     required
                     min="0"
+                    step="0.01"
                     className={`w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 text-lg outline-none transition ${activeTab === 'room' ? 'focus:ring-purple-500' : 'focus:ring-pink-500'}`}
                   />
                 </div>
