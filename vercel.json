@@ -3,6 +3,10 @@
     {
       "source": "/slipok-api/:path*",
       "destination": "https://api.slipok.com/api/line/apikey/:path*"
+    },
+    {
+      "source": "/line-notify",
+      "destination": "https://notify-api.line.me/api/notify"
     }
   ]
 }
